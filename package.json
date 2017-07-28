@@ -1,0 +1,44 @@
+{
+  "name": "kubernetes-bootstrap",
+  "version": "0.0.1",
+  "description": "Tool for processing a set of (mustache) templates into a kubernetes cluster",
+  "main": "src/bootstrap.js",
+  "bin": "src/bootstrap.js",
+  "scripts": {
+    "test": "mocha --recursive test/**/*.spec.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Collaborne/kubernetes-bootstrap.git"
+  },
+  "keywords": [
+    "kubernetes",
+    "bootstrap",
+    "mustache",
+    "template"
+  ],
+  "author": "Collborne B.V. <opensource@collaborne.com>",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/Collaborne/kubernetes-bootstrap/issues"
+  },
+  "homepage": "https://github.com/Collaborne/kubernetes-bootstrap#readme",
+  "dependencies": {
+    "auto-kubernetes-client": "^0.4.3",
+    "aws-sdk": "^2.92.0",
+    "deepmerge": "^1.5.0",
+    "js-yaml": "^3.9.0",
+    "log4js": "^1.0.0",
+    "mkdirp": "^0.5.1",
+    "mustache": "^2.3.0",
+    "path-is-inside": "^1.0.2",
+    "urijs": "^1.18.10",
+    "walk": "^2.3.9",
+    "yargs": "^8.0.2"
+  },
+  "devDependencies": {
+    "cross-env": "^5.0.1",
+    "eslint": "^4.3.0",
+    "mocha": "^3.4.2"
+  }
+}
