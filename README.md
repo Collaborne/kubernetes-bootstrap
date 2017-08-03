@@ -1,4 +1,4 @@
-# kubernetes-bootstrap [![Build Status](https://travis-ci.org/Collaborne/kubernetes-bootstrap.svg?branch=master)](https://travis-ci.org/Collaborne/kubernetes-bootstrap)
+# kubernetes-bootstrap [![Build Status](https://travis-ci.org/Collaborne/kubernetes-bootstrap.svg?branch=master)](https://travis-ci.org/Collaborne/kubernetes-bootstrap) [![Greenkeeper badge](https://badges.greenkeeper.io/Collaborne/kubernetes-bootstrap.svg)](https://greenkeeper.io/)
 
 Tool for processing a set of (mustache) templates into a kubernetes cluster
 
