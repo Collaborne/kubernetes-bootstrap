@@ -38,7 +38,7 @@ const argv = require('yargs')
 	.string('content').default('context', undefined).describe('context', 'Context in the kubectl configuration to use')
 	.array('exclude').default('exclude', ['aws']).alias('x', 'exclude').describe('exclude', 'Template module to exclude')
 	.array('define').default('define', []).alias('D', 'define').describe('define', 'Define/Override a setting on the command-line')
-	.coerce(['exclude', 'define'], function(value) { return typeof value === 'string' ? [value] : value})
+	.coerce(['exclude', 'define'], value => typeof value === 'string' ? [value] : value)
 	.help()
 	.strict()
 	.parse(args);
