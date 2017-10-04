@@ -40,6 +40,7 @@ const argv = require('yargs')
 	.array('define').default('define', []).alias('D', 'define').describe('define', 'Define/Override a setting on the command-line')
 	.coerce(['exclude', 'define'], function(value) { return typeof value === 'string' ? [value] : value})
 	.help()
+	.strict()
 	.parse(args);
 	
 /**
