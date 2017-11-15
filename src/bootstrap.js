@@ -58,7 +58,7 @@ function ensureNamespace(k8sClient, environment, extraLabels = {}, extraAnnotati
 		if (err.reason === 'NotFound') {
 			// Create a new one
 			const labels = Object.assign({}, extraLabels, {
-				"creator": "bootstrap"
+				creator: 'bootstrap'
 			});
 			const annotations = Object.assign({}, extraAnnotations);
 			const namespace = {
