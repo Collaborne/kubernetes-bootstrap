@@ -278,6 +278,11 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 						renderedContents.split(/^---+$/m).filter(document => document.trim().length > 0).map(function(document) {
 							try {
 								const parsedContents = yaml.safeLoad(document);
+								if (!parsedContents) {
+									// Document (part) is empty, ignore it.
+									return [];
+								}
+
 								if (parsedContents.kind === 'List') {
 									return parsedContents.items;
 								} else {
