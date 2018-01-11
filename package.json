@@ -5,7 +5,7 @@
   "main": "src/bootstrap.js",
   "bin": "src/bootstrap.js",
   "scripts": {
-    "test": "mocha --recursive test/**/*.spec.js"
+    "test": "nyc mocha --recursive test/**/*.spec.js"
   },
   "repository": {
     "type": "git",
@@ -39,6 +39,7 @@
   "devDependencies": {
     "cross-env": "^5.0.1",
     "eslint": "^4.3.0",
-    "mocha": "^4.0.1"
+    "mocha": "^4.0.1",
+    "nyc": "^11.4.1"
   }
 }
