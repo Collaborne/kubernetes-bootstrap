@@ -5,7 +5,9 @@
   "main": "src/bootstrap.js",
   "bin": "src/bootstrap.js",
   "scripts": {
-    "test": "nyc mocha --recursive test/**/*.spec.js"
+    "lint": "eslint src test",
+    "test": "nyc mocha --recursive test/**/*.spec.js",
+    "prepublish": "npm run lint"
   },
   "repository": {
     "type": "git",

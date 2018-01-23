@@ -1,16 +1,17 @@
 {
+    "root": true,
+
     "env": {
         "browser": false,
         "commonjs": false,
         "es6": true,
-        "node": true,
-        "mocha": true
+        "node": true
     },
     "parserOptions": {
         "ecmaFeatures": {
             "jsx": false
         },
-        "sourceType": "script"
+        "sourceType": "module"
     },
     "rules": {
         "no-const-assign": "error",
@@ -20,5 +21,22 @@
         "no-unused-vars": "warn",
         "constructor-super": "warn",
         "valid-typeof": "warn"
-    }
+    },
+
+    "overrides": [
+        {
+            "files": "src/bootstrap.js",
+
+            "parserOptions": {
+                "sourceType": "script"
+            }
+        },
+        {
+            "files": "test/**/*.js",
+
+            "env": {
+                "mocha": true
+            }
+        }
+    ]
 }
