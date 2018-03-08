@@ -1,5 +1,3 @@
-'use strict'
-
 const deepMerge = require('deepmerge');
 const URI = require('urijs');
 

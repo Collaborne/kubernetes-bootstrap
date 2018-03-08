@@ -1,5 +1,3 @@
-'use strict'
-
 const AWS = require('aws-sdk');
 
 const k8s = require('./k8s-client.js');
