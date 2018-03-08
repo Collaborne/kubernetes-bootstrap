@@ -7,7 +7,7 @@ const URI = require('urijs');
  * @param {Array} defines list of definitions
  * @return {Object}
  */
-exports.definesToObject = function(defines) {
+function definesToObject(defines) {
 	const properties = defines.map(define => define.split('=')).map(function(kv) {
 		const name = kv[0];
 
@@ -30,9 +30,14 @@ exports.definesToObject = function(defines) {
  * @param {string} uri
  * @return {string}
  */
-exports.cleanOrigin = function(uri) {
+function cleanOrigin(uri) {
 	const originalOrigin = URI(uri);
 
 	// Strip out any path, as that confuses shindig and is not part of an origin.
 	return originalOrigin.protocol() + '://' + originalOrigin.host();
+}
+
+module.exports = {
+	definesToObject,
+	cleanOrigin
 }
