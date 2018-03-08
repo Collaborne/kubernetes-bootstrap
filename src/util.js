@@ -23,7 +23,7 @@ exports.definesToObject = function(defines) {
 		const reversePath = name.split('.').reverse();
 		return reversePath.reduce((obj, name) => ({ [name]: obj }), value);
 	}, {});
-	return properties.reduce(deepMerge, {});
+	return properties.reduce((agg, value) => agg = deepMerge(agg, value), {});
 }
 
 /**
