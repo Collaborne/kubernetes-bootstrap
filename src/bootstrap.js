@@ -12,6 +12,8 @@ const mustache = require('mustache');
 const yaml = require('js-yaml');
 const deepMerge = require('deepmerge');
 
+const log4js = require('log4js');
+log4js.configure(process.env.LOG4JS_CONFIG || path.resolve(__dirname, 'log4js.json'));
 const logger = require('log4js').getLogger();
 
 const k8s = require('./kubernetes/k8s-client.js');
