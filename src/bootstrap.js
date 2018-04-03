@@ -44,7 +44,7 @@ const argv = require('yargs')
 	.help()
 	.strict()
 	.parse(args);
-	
+
 /**
  * Ensure that the namespace for the environment exists.
  *
@@ -413,7 +413,7 @@ k8s(argv.kubeconfig, argv.context, '').then(function(k8sClient) {
 		if (!argv.disableOverrides && argv.deploySettingsOverrides) {
 			settingsFileNames.push(argv.deploySettingsOverrides);
 		}
-		
+
 		return loadProperties(settingsFileNames.map(settingsFileName => path.resolve(settingsFileName)), properties);
 	})
 	.then(properties => {
