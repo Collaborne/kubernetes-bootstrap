@@ -295,6 +295,13 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 						}).reduce(function(agg, documents) {
 							return agg.concat(documents);
 						}, []).forEach(document => {
+							// A valid resource at least has a apiVersion and kind, otherwise just report
+							// an error and skip it.
+							if (!document.apiVersion || !document.kind) {
+								logger.error(`${inputFileName}: Ignoring invalid resource definition`);
+								return;
+							}
+
 							// Set the namespace for the current configuration to the environment, so that our resources
 							// are properly isolated from other environments.
 							// XXX: Also ensure we have the metadata.annotations field, which kubectl seems to do as well.
