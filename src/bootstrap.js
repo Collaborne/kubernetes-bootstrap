@@ -305,6 +305,7 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 							});
 
 							// Assign a namespace, iff that resource exists in namespaces.
+							logger.trace(`${inputFileName}: Processing ${resource.apiVersion}/${resource.kind} ${resource.metadata.name}`);
 							const k8sResource = k8sClient.group(resource.apiVersion).resource(resource.kind);
 							if (!k8sResource) {
 								logger.error(`${inputFileName}: Cannot find resource ${resource.apiVersion}/${resource.kind}`);
