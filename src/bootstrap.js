@@ -418,7 +418,7 @@ k8s(argv.kubeconfig, argv.context, '').then(function(k8sClient) {
 	})
 	.then(properties => {
 		// Log the properties before adding the environment variables into them
-		// Environment variables typically weird things, and likely secrets that we do not want to expose here
+		// Environment variables contain typically weird things, and likely secrets that we do not want to expose here
 		logger.debug(`Resolved properties: ${JSON.stringify(properties, null, 2)}`);
 		return properties;
 	})
