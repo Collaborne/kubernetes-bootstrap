@@ -428,7 +428,7 @@ k8s(argv.kubeconfig, argv.context, '').then(function(k8sClient) {
 		let processResource;
 		if (argv.outputOnly) {
 			result = Promise.resolve();
-			processResource = (resource) => Promise.resolve(resource);
+			processResource = resource => Promise.resolve(resource);
 		} else {
 			const namespace = properties.environment;
 			result = ensureNamespace(k8sClient, namespace, {}).then(ns => {
