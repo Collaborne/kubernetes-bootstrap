@@ -218,22 +218,29 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 						template = contents.toString('UTF-8');
 					}
 					const renderedContents = mustache.render(template, properties, function(partial) {
+						// Filters are functions that take a buffer-or-string, and produce a buffer-or-string
+						// Generally it's good to stay "buffer-y" for a long time.
 						const filterConstructors = {
 							indent(spaces = 2) {
-								return function(s) {
-									return s.replace(/^.+/gm, ' '.repeat(spaces) + '$&');
+								return function(value) {
+									// Force utf8 now: indenting is a string operation.
+									return value.toString('utf8').replace(/^.+/gm, ' '.repeat(spaces) + '$&');
 								}
 							},
 
 							base64() {
-								return function(s) {
-									return Buffer.from(s).toString('base64');
+								return function(value) {
+									if (!Buffer.isBuffer(value)) {
+										throw new Error(`Buffer required for base64`);
+									}
+									return value.toString('base64');
 								}
 							},
 
 							newline() {
-								return function(s) {
-									return s + '\n'
+								return function(value) {
+									// Force utf8 now: indenting is a string operation.
+									return value.toString('utf8') + '\n'
 								}
 							}
 						}
@@ -277,7 +284,7 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 						}
 
 						// Finally apply the filters in order
-						const value = fs.readFileSync(source, 'UTF-8');
+						const value = fs.readFileSync(source);
 						return filters.reduce((result, filter) => filter.call(undefined, result), value);
 					});
 					return fs.writeFile(outputFileName, renderedContents, function(err) {
