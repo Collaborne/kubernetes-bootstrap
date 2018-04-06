@@ -229,6 +229,12 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 								return function(s) {
 									return Buffer.from(s).toString('base64');
 								}
+							},
+
+							newline() {
+								return function(s) {
+									return s + '\n'
+								}
 							}
 						}
 
