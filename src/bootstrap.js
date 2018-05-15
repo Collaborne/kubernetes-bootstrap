@@ -324,12 +324,13 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 								return;
 							}
 
-							// Annotations applied to each resource.
+							// Annotations and labels applied to each resource.
 							// For easy filtering/selecting of resources in complex projects as well as being able to trace
 							// the origin of a resource back to a file we provide the source directory, source file name, and complete
 							// source file name relative to the template directory.
 							// XXX: kubectl always sets the annotations, even when they are empty.
-							const annotations = {
+							const annotations = {};
+							const labels = {
 								'bootstrap.k8s.collaborne.com/source-file': relativeInputFileName,
 								'bootstrap.k8s.collaborne.com/source-directory': path.dirname(relativeInputFileName),
 								'bootstrap.k8s.collaborne.com/source-name': path.basename(relativeInputFileName)
@@ -339,7 +340,8 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 							// are properly isolated from other environments.
 							const resource = deepMerge(document, {
 								metadata: {
-									annotations
+									annotations,
+									labels
 								}
 							});
 
