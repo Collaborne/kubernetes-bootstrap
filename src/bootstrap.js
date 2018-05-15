@@ -202,7 +202,8 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 			}
 			const inputFileName = path.resolve(root, fileStats.name);
 			fs.readFile(inputFileName, function(err, contents) {
-				const outputFileName = path.resolve(outputDir, path.relative(templatesDir, inputFileName));
+				const relativeInputFileName = path.relative(templatesDir, inputFileName);
+				const outputFileName = path.resolve(outputDir, relativeInputFileName);
 				mkdirp(path.dirname(outputFileName), function(err, made) {
 					if (err) {
 						logger.error(`Cannot create directory for ${outputFileName}: ${err.message}`);
@@ -323,12 +324,22 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 								return;
 							}
 
+							// Annotations applied to each resource.
+							// For easy filtering/selecting of resources in complex projects as well as being able to trace
+							// the origin of a resource back to a file we provide the source directory, source file name, and complete
+							// source file name relative to the template directory.
+							// XXX: kubectl always sets the annotations, even when they are empty.
+							const annotations = {
+								'bootstrap.k8s.collaborne.com/source-file': relativeInputFileName,
+								'bootstrap.k8s.collaborne.com/source-directory': path.dirname(relativeInputFileName),
+								'bootstrap.k8s.collaborne.com/source-name': path.basename(relativeInputFileName)
+							};
+
 							// Set the namespace for the current configuration to the environment, so that our resources
 							// are properly isolated from other environments.
-							// XXX: Also ensure we have the metadata.annotations field, which kubectl seems to do as well.
 							const resource = deepMerge(document, {
 								metadata: {
-									annotations: {}
+									annotations
 								}
 							});
 
