@@ -328,12 +328,13 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 							// For easy filtering/selecting of resources in complex projects as well as being able to trace
 							// the origin of a resource back to a file we provide the source directory, source file name, and complete
 							// source file name relative to the template directory.
+							// Unfortunately we cannot use arbitrary content in label values, so the each invalid character is replaced by a '_'.
 							// XXX: kubectl always sets the annotations, even when they are empty.
 							const annotations = {};
 							const labels = {
-								'bootstrap.k8s.collaborne.com/source-file': relativeInputFileName,
-								'bootstrap.k8s.collaborne.com/source-directory': path.dirname(relativeInputFileName),
-								'bootstrap.k8s.collaborne.com/source-name': path.basename(relativeInputFileName)
+								'bootstrap.k8s.collaborne.com/source-file': util.cleanLabelValue(relativeInputFileName),
+								'bootstrap.k8s.collaborne.com/source-directory': util.cleanLabelValue(path.dirname(relativeInputFileName)),
+								'bootstrap.k8s.collaborne.com/source-name': util.cleanLabelValue(path.basename(relativeInputFileName))
 							};
 
 							// Set the namespace for the current configuration to the environment, so that our resources

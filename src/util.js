@@ -37,7 +37,19 @@ function cleanOrigin(uri) {
 	return originalOrigin.protocol() + '://' + originalOrigin.host();
 }
 
+/**
+ * Clean a given value to be a valid "label value".
+ *
+ * @param {string} value value to be cleaned
+ * @return {string} cleaned label value
+ * @see https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+ */
+function cleanLabelValue(value) {
+	return value.replace(/[^A-Za-z0-9_.-]/g, '_');
+}
+
 module.exports = {
 	definesToObject,
-	cleanOrigin
+	cleanLabelValue,
+	cleanOrigin,
 }

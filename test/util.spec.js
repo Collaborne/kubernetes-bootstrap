@@ -28,6 +28,16 @@ describe('util functions', function() {
 		});
 	});
 
+	describe('#cleanLabelValue()', function() {
+		it('should accept a valid value without changes', function() {
+			const validValue = 'valid-value-123.FOO_BAR';
+			assert.equal(validValue, util.cleanLabelValue(validValue));
+		});
+		it('should replace invalid characters with (multiple) _', function() {
+			assert.equal('invalid__value', util.cleanLabelValue('invalid/#value'));
+		});
+	});
+
 	describe('#cleanOrigin()', function() {
 		it('should return a valid origin without port unmodified', function() {
 			assert.equal('https://example.com', util.cleanOrigin('https://example.com'));
