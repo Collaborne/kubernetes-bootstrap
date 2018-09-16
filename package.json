@@ -32,7 +32,7 @@
     "js-yaml": "^3.9.0",
     "log4js": "^3.0.0",
     "mkdirp": "^0.5.1",
-    "mustache": "^2.3.0",
+    "mustache": "^3.0.0",
     "path-is-inside": "^1.0.2",
     "urijs": "^1.18.10",
     "walk": "^2.3.9",
