@@ -67,7 +67,7 @@ function authorizeK8s(kubeConfigPath, namespace = 'default', serviceAccount = 'd
 						namespace: namespace
 					},
 					data: {
-						'.dockerconfigjson': new Buffer(JSON.stringify(dockerConfig)).toString('base64')
+						'.dockerconfigjson': Buffer.from(JSON.stringify(dockerConfig)).toString('base64')
 					},
 					type: 'kubernetes.io/dockerconfigjson'
 				};
