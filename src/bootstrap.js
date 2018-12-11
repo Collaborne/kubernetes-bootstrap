@@ -131,11 +131,17 @@ function applyResource(k8sClient, resource) {
 			// Cannot patch, try replace
 			return k8sResource.update(resource).then(logResult('UPDATE'));
 		} else if (err.code === 500) {
-			// Error on the server side, try replace.
-			// This seems to happen with ThirdPartyResources in 1.5:
-			// May 29 08:41:14 minikube localkube[24061]: E0529 08:41:14.784327   24061 errors.go:63] apiserver received an error that is not an unversioned.Status: unable to find api field in struct ThirdPartyResourceData for the json field "spec"
+			// 500: Error on the server side
+			//      This seems to happen with ThirdPartyResources in 1.5:
+			//      May 29 08:41:14 minikube localkube[24061]: E0529 08:41:14.784327   24061 errors.go:63] apiserver received an error that is not an unversioned.Status: unable to find api field in struct ThirdPartyResourceData for the json field "spec"
+			// XXX: In kubernetes 1.5 we can just take the object and try an update, but in 1.10 it seems to require meta.resourceVersion -- which we don't have here.
 			logger.warn(`Received ${err.status}: ${err.message}, trying to replace the object`);
 			return k8sResource.update(resource).then(logResult('UPDATE'));
+		} else if (err.code === 415) {
+			// 415: Unsupported media type
+			//      This can happen with CRDs in 1.10, which do not implement strategic patches (see https://github.com/kubernetes/kubernetes/issues/58414)
+			// If the format was a strategic-merge-patch+json, we can try with a regular merge-patch+json instead.
+			return k8sResource.patch(resource, 'application/merge-patch+json').then(logResult('PATCH (merge)'));
 		} else if (err.reason === 'NotFound') {
 			// Non-existing resource, try creating
 			// We need to simulate '--save-config' here, otherwise changes will not be properly applied later.
