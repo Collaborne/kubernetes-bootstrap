@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const {spawn} = require('child_process');
 const yaml = require('js-yaml');
 const k8s = require('auto-kubernetes-client');
 
@@ -112,6 +113,33 @@ function create(kubeConfigPath, context) {
 					} else if (userConfig.token) {
 						accessConfigPromise = Promise.resolve({
 							token: userConfig.token,
+						});
+					} else if (userConfig.exec) {
+						// Spawn the tool
+						accessConfigPromise = new Promise((resolve, reject) => {
+							let output = '';
+							let error = '';
+							// XXX: Is it really a good idea to start out with the complete environment?
+							// https://kubernetes.io/docs/reference/access-authn-authz/authentication/#client-go-credential-plugins doesn't specify much here.
+							let env = Object.assign({}, process.env);
+							if (userConfig.exec.env) {
+								env = Object.assign(env, userConfig.exec.env.reduce((agg, envEntry) => Object.assign(agg, {[envEntry.name]: envEntry.value}), {}));
+							}
+							const authenticator = spawn(userConfig.exec.command, userConfig.exec.args || [], {env});
+							authenticator.stdout.on('data', data => {
+								output += data;
+							});
+							authenticator.stderr.on('data', data => {
+								error += data;
+							});
+							authenticator.on('close', code => {
+								if (code !== 0) {
+									reject(new Error(error));
+									return;
+								}
+
+								resolve(JSON.parse(output));
+							});
 						});
 					} else {
 						throw new Error(`Cannot load user configuration for ${contextConfig.user} in ${p}`);
