@@ -109,6 +109,10 @@ function create(kubeConfigPath, context) {
 							cert: fs.readFileSync(path.resolve(path.dirname(p), userConfig['client-certificate'])),
 							key: fs.readFileSync(path.resolve(path.dirname(kubeConfigPath), userConfig['client-key'])),
 						});
+					} else if (userConfig.token) {
+						accessConfigPromise = Promise.resolve({
+							token: userConfig.token,
+						});
 					} else {
 						throw new Error(`Cannot load user configuration for ${contextConfig.user} in ${p}`);
 					}
