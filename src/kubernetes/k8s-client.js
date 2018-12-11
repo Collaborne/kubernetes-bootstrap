@@ -7,6 +7,31 @@ function lookupByName(list, name, valueKey) {
 	return list.filter(e => e.name === name).map(e => e[valueKey]).shift();
 }
 
+function loadKubeConfig(kubeConfigPath) {
+	// Split the given config path on the usual path separator, then load the configurations
+	// _sequentially_, each later one overwriting/merging with the previous one.
+	const kubeConfigPaths = kubeConfigPath.split(':')
+	const kubeConfigDescPromises = kubeConfigPaths.map(kubeConfigPath => {
+		return new Promise((resolve, reject) => {
+			fs.readFile(kubeConfigPath, 'utf-8', (err, data) => {
+				if (err) {
+					reject(err);
+					return;
+				}
+
+				resolve({[kubeConfigPath]: yaml.safeLoad(data)});
+			});
+		});
+	});
+
+	return Promise.all(kubeConfigDescPromises).then(kubeConfigDescs => {
+		return {
+			paths: kubeConfigPaths,
+			configs: kubeConfigDescs.reduce((agg, kubeConfig) => Object.assign({}, agg, kubeConfig), {})
+		};
+	});
+}
+
 /**
  * Create a kubernetes client instance for the current kubectl context.
  *
@@ -19,38 +44,88 @@ function lookupByName(list, name, valueKey) {
  */
 // FIXME: This probably should move into a helper in auto-kubernetes-client
 function create(kubeConfigPath, context) {
-	return new Promise(function(resolve, reject) {
-		return fs.readFile(kubeConfigPath, 'UTF-8', function(err, data) {
-			if (err) {
-				return reject(err);
+	return loadKubeConfig(kubeConfigPath)
+		.then(kubeConfig => {
+			// First: Find the "current context" and resolve the configuration
+			let i = kubeConfig.paths.length - 1;
+			let currentContext = context;
+			while (!currentContext && i >= 0) {
+				const path = kubeConfig.paths[i];
+				const config = kubeConfig.configs[path];
+				currentContext = config['current-context'];
+				if (!currentContext) {
+					i--;
+				}
 			}
 
-			const kubeConfig = yaml.safeLoad(data);
-			const currentContext = context || kubeConfig['current-context'];
+			if (!currentContext) {
+				throw new Error('Cannot find a context, and no context provided');
+			}
 
-			const contextConfig = lookupByName(kubeConfig.contexts, currentContext, 'context');
+			// Find the context configuration itself
+			// We're assuming here that each of the pieces of the configuration could potentially be defined in another file,
+			// so that a user could have a shared "global settings" configuration, and then a per-project/-workspace/... configuration
+			// that only specifies the context.
+			let contextConfig;
+			for (const p of kubeConfig.paths.reverse()) {
+				contextConfig = lookupByName(kubeConfig.configs[p].contexts, currentContext, 'context');
+				if (contextConfig) {
+					// Found the configuration itself
+					break;
+				}
+			}
 			if (!contextConfig) {
-				return reject(new Error(`Cannot find context configuration for ${currentContext}, check ${kubeConfigPath}`));
-			}
-			const clusterConfig = lookupByName(kubeConfig.clusters, contextConfig.cluster, 'cluster');
-			if (!clusterConfig) {
-				return reject(new Error(`Cannot find cluster configuration for ${contextConfig.cluster}, check ${kubeConfigPath}`));
-			}
-			const userConfig = lookupByName(kubeConfig.users, contextConfig.user, 'user');
-			if (!userConfig) {
-				return reject(new Error(`Cannot find user configuration for ${contextConfig.user}, check ${kubeConfigPath}`));
+				throw new Error(`Cannot find context configuration for ${currentContext}, check ${kubeConfigPath}`);
 			}
 
-			const config = {
-				url: clusterConfig.server,
-				ca: fs.readFileSync(path.resolve(path.dirname(kubeConfigPath), clusterConfig['certificate-authority'])),
-				cert: fs.readFileSync(path.resolve(path.dirname(kubeConfigPath), userConfig['client-certificate'])),
-				key: fs.readFileSync(path.resolve(path.dirname(kubeConfigPath), userConfig['client-key']))
+			// Find the cluster definition
+			let url;
+			let ca;
+			for (const p of kubeConfig.paths.reverse()) {
+				const clusterConfig = lookupByName(kubeConfig.configs[p].clusters, contextConfig.cluster, 'cluster');
+				if (clusterConfig) {
+					url = clusterConfig.server;
+					if (clusterConfig['certificate-authority-data']) {
+						ca = Buffer.from(clusterConfig['certificate-authority-data'], 'base64').toString();
+					} else if (clusterConfig['certificate-authority']) {
+						ca = fs.readFileSync(path.resolve(path.dirname(p), clusterConfig['certificate-authority']));
+					} else {
+						throw new Error(`Cannot find certificate authority information for cluster ${contextConfig.cluster} in ${p}`);
+					}
+					break;
+				}
+			}
+			if (!url || !ca) {
+				throw new Error(`Cannot find cluster configuration for ${contextConfig.cluster}, check ${kubeConfigPath}`);
 			}
 
-			return resolve(k8s(config));
+			// Find the user definition
+			let accessConfigPromise;
+			for (const p of kubeConfig.paths.reverse()) {
+				const userConfig = lookupByName(kubeConfig.configs[p].users, contextConfig.user, 'user');
+				if (userConfig) {
+					if (userConfig.cert && userConfig.key) {
+						accessConfigPromise = Promise.resolve({
+							cert: fs.readFileSync(path.resolve(path.dirname(p), userConfig['client-certificate'])),
+							key: fs.readFileSync(path.resolve(path.dirname(kubeConfigPath), userConfig['client-key'])),
+						});
+					} else {
+						throw new Error(`Cannot load user configuration for ${contextConfig.user} in ${p}`);
+					}
+					break;
+				}
+			}
+
+			// Then: Load the context, resolving path references against the path of the configuration itself
+			if (!accessConfigPromise) {
+				throw new Error(`Cannot find user configuration for ${contextConfig.user}, check ${kubeConfigPath}`);
+			}
+
+			return accessConfigPromise.then(accessConfig => {
+				const config = Object.assign({url: url, ca: ca}, accessConfig);
+				return k8s(config);
+			});
 		});
-	});
 }
 
 module.exports = create;
