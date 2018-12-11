@@ -415,23 +415,30 @@ function loadProperties(settingsFileNames, commandlineProperties) {
 function resolveModules(includedModules, excludedModules) {
 	// Calculate the modules to use:
 	// Start from all in templates/, filtered by the ones explicitly given, removing all that are explicitly removed.
-	function acceptModule(module) {
-		if (includedModules.length > 0) {
-			if (includedModules.indexOf(module) !== -1) {
-				return false;
-			}
-		}
-
-		return excludedModules.indexOf(module) === -1;
-	}
-
 	return new Promise(function(resolve, reject) {
 		fs.readdir(argv.templateDirectory, function(err, availableModules) {
 			if (err) {
 				return reject(err);
 			}
 
-			const resolvedModules = availableModules.filter(acceptModule);
+			if (includedModules.length > 0) {
+				// Find "missing" modules: The user wanted these, but they are not actually available.
+				const missingModules = includedModules.filter(m => availableModules.indexOf(m) === -1);
+				if (missingModules.length > 0) {
+					return reject(new Error(`Cannot use unavailable modules ${missingModules}`));
+				}
+
+				// Next, check that we don't have conflicts: If the user says we should include X _and_ exclude X, something is off.
+				const conflictingModules = includedModules.filter(m => excludedModules.indexOf(m) !== -1);
+				if (conflictingModules.length > 0) {
+					return reject(new Error(`Cannot both include and exclude modules ${conflictingModules}`));
+				}
+			}
+
+			// Now filter available modules
+			const resolvedModules = availableModules
+				.filter(m => includedModules.length === 0 || includedModules.indexOf(m) !== -1)
+				.filter(m => excludedModules.indexOf(m) === -1);
 			logger.info(`Using modules ${resolvedModules.join(',')}`);
 			return resolve(resolvedModules);
 		});
