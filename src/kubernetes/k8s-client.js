@@ -138,7 +138,13 @@ function create(kubeConfigPath, context) {
 									return;
 								}
 
-								resolve(JSON.parse(output));
+								const parsedOutput = JSON.parse(output);
+								if (parsedOutput.apiVersion !== 'client.authentication.k8s.io/v1alpha1' || parsedOutput.kind !== 'ExecCredential') {
+									reject(new Error(`Unexpected authenticator result ${parsedOutput.apiVersion}/${parsedOutput.kind}`));
+									return;
+								}
+
+								resolve(parsedOutput.status);
 							});
 						});
 					} else {
