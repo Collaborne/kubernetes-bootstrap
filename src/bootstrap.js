@@ -142,21 +142,24 @@ function applyResource(k8sClient, resource) {
 				throw new Error(`Unexpected resource ${logName} with ${annotation} set to true`);
 			}
 			break;
+		case 'bootstrap.k8s.collaborne.com/update-allowed':
+			return Object.assign(flags, {UPDATE_ALLOWED: value === 'true'});
 		default:
 			throw new Error(`Unrecognized annotation ${annotation} on ${logName}`);
 		}
 	}, {
 		IGNORE_PATCH_FAILURES: false,
+		UPDATE_ALLOWED: true,
 	});
 
 	// First try patching, then replacing, and and fall back to creation if the object doesn't exist.
 	// TODO: replace might fail, but we can try delete+post.
 	return k8sResource.patch(resource).then(logResult('PATCH')).catch(function(err) {
 		// XXX: what would be the correct 'err.reason'?
-		if (err.code === 405) {
+		if (err.code === 405 && flags.UPDATE_ALLOWED) {
 			// Cannot patch, try replace
 			return k8sResource.update(resource).then(logResult('UPDATE'));
-		} else if (err.code === 500) {
+		} else if (err.code === 500 && flags.UPDATE_ALLOWED) {
 			// Error on the server side, try replace.
 			// This seems to happen with ThirdPartyResources in 1.5:
 			// May 29 08:41:14 minikube localkube[24061]: E0529 08:41:14.784327   24061 errors.go:63] apiserver received an error that is not an unversioned.Status: unable to find api field in struct ThirdPartyResourceData for the json field "spec"
