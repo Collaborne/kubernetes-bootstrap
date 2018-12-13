@@ -40,6 +40,7 @@ const argv = require('yargs')
 	.string('content').default('context', undefined).describe('context', 'Context in the kubectl configuration to use')
 	.array('exclude').default('exclude', []).alias('x', 'exclude').describe('exclude', 'Template module to exclude')
 	.array('define').default('define', []).alias('D', 'define').describe('define', 'Define/Override a setting on the command-line')
+	.array('include-kind').default('include-kind', []).describe('include-kind', 'Only include resources of the given kind')
 	.coerce(['exclude', 'define'], value => typeof value === 'string' ? [value] : value)
 	.help()
 	.strict()
@@ -480,6 +481,20 @@ k8s(argv.kubeconfig, argv.context, '').then(function(k8sClient) {
 				}
 			});
 			processResource = applyResource.bind(undefined, k8sClient);
+		}
+
+		if (argv.includeKind) {
+			const innerProcessResource = processResource;
+			processResource = resource => {
+				// Must have specified either 'kind' or 'api.version/kind' to be included.
+				const matchKind = `${resource.apiVersion}.${resource.kind}`;
+				if (argv.includeKind.indexOf(resource.kind) === -1 && argv.includeKind.indexOf(matchKind) === -1) {
+					logger.debug(`Skipping ${resource.apiVersion}.${resource.kind} ${resource.metadata.name}: Not explicitly included`);
+					return Promise.resolve(resource);
+				}
+
+				return innerProcessResource(resource);
+			}
 		}
 
 		return result
