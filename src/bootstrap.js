@@ -124,6 +124,31 @@ function applyResource(k8sClient, resource) {
 		};
 	}
 
+	// Process all annotations into flags.
+	// If there are annotations for this tool that we do not know: Immediately abort, as these
+	// annotations may require a behavior that we simply do not provide.
+	const flags = Object.keys(resource.metadata.annotations || {}).reduce((flags, annotation) => {
+		if (!annotation.startsWith('bootstrap.k8s.collaborne.com/')) {
+			// Irrelevant for us.
+			return flags;
+		}
+		const value = resource.metadata.annotations[annotation];
+		switch (annotation) {
+		case 'bootstrap.k8s.collaborne.com/ignore-patch-failures':
+			return Object.assign(flags, {IGNORE_PATCH_FAILURES: value === 'true'});
+		case 'bootstrap.k8s.collaborne.com/manual':
+			// This annotation means the resource will only be updated manually, so it shouldn't have reached this point.
+			if (value === 'true') {
+				throw new Error(`Unexpected resource ${logName} with ${annotation} set to true`);
+			}
+			break;
+		default:
+			throw new Error(`Unrecognized annotation ${annotation} on ${logName}`);
+		}
+	}, {
+		IGNORE_PATCH_FAILURES: false,
+	});
+
 	// First try patching, then replacing, and and fall back to creation if the object doesn't exist.
 	// TODO: replace might fail, but we can try delete+post.
 	return k8sResource.patch(resource).then(logResult('PATCH')).catch(function(err) {
@@ -148,7 +173,7 @@ function applyResource(k8sClient, resource) {
 				}
 			};
 			return k8sResource.create(deepMerge(resource, saveConfigMetadata)).then(logResult('CREATE'));
-		} else if (resource.metadata.annotations && resource.metadata.annotations['bootstrap.k8s.collaborne.com/ignore-patch-failures'] === 'true') {
+		} else if (flags.IGNORE_PATCH_FAILURES) {
 			// Certain resources are "one-shot": When jobs exist many fields are immutable, but that's perfectly fine: the job represents
 			// the state at which it executed. If a resource has the annotation bootstrap.k8s.collaborne.com/ignore-patch-failures, we ignore
 			// patch failures gracefully.
