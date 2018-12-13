@@ -483,7 +483,7 @@ k8s(argv.kubeconfig, argv.context, '').then(function(k8sClient) {
 			processResource = applyResource.bind(undefined, k8sClient);
 		}
 
-		if (argv.includeKind) {
+		if (argv.includeKind && argv.includeKind.length > 0) {
 			const innerProcessResource = processResource;
 			processResource = resource => {
 				// Must have specified either 'kind' or 'api.version/kind' to be included.
