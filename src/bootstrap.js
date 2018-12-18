@@ -80,6 +80,10 @@ function ensureNamespace(k8sClient, environment, extraLabels = {}, extraAnnotati
 	});
 }
 
+function getLogName(resource) {
+	return `${resource.apiVersion}.${resource.kind} ${resource.metadata.name}`;
+}
+
 /**
  * Apply the given resource into the current kubernetes context.
  *
@@ -87,11 +91,9 @@ function ensureNamespace(k8sClient, environment, extraLabels = {}, extraAnnotati
  * @param {Object} resource
  */
 function applyResource(k8sClient, resource) {
-	const logName = `${resource.apiVersion}.${resource.kind} ${resource.metadata.name}`;
-
 	if (resource.metadata.annotations && resource.metadata.annotations['bootstrap.k8s.collaborne.com/manual'] === 'true') {
 		// Resource is not to be applied automatically, stop here.
-		logger.info(`Skipping manual resource ${logName}`);
+		logger.info(`Skipping manual resource ${getLogName(resource)}`);
 		return Promise.resolve(resource);
 	}
 
@@ -109,17 +111,17 @@ function applyResource(k8sClient, resource) {
 		}
 
 		if (!accessor) {
-			return Promise.reject(new Error(`Cannot find API for creating ${logName}`));
+			return Promise.reject(new Error(`Cannot find API for creating ${getLogName(resource)}`));
 		}
 
 		k8sResource = accessor(resource.metadata.name);
 	} catch (err) {
-		return Promise.reject(new Error(`Cannot instantiate the API for creating ${logName}: ${err.message}`));
+		return Promise.reject(new Error(`Cannot instantiate the API for creating ${getLogName(resource)}: ${err.message}`));
 	}
 
 	function logResult(op) {
 		return function(result) {
-			logger.debug(`${op} ${logName}: ${JSON.stringify(result.status)}`);
+			logger.debug(`${op} ${getLogName(resource)}: ${JSON.stringify(result.status)}`);
 			return result;
 		};
 	}
@@ -139,13 +141,13 @@ function applyResource(k8sClient, resource) {
 		case 'bootstrap.k8s.collaborne.com/manual':
 			// This annotation means the resource will only be updated manually, so it shouldn't have reached this point.
 			if (value === 'true') {
-				throw new Error(`Unexpected resource ${logName} with ${annotation} set to true`);
+				throw new Error(`Unexpected resource ${getLogName(resource)} with ${annotation} set to true`);
 			}
 			break;
 		case 'bootstrap.k8s.collaborne.com/update-allowed':
 			return Object.assign(flags, {UPDATE_ALLOWED: value === 'true'});
 		default:
-			throw new Error(`Unrecognized annotation ${annotation} on ${logName}`);
+			throw new Error(`Unrecognized annotation ${annotation} on ${getLogName(resource)}`);
 		}
 	}, {
 		IGNORE_PATCH_FAILURES: false,
@@ -185,7 +187,7 @@ function applyResource(k8sClient, resource) {
 			throw err;
 		}
 	}).catch(function(err) {
-		throw new Error(`Cannot apply resource ${logName}: ${err.message} (${err.operation})`);
+		throw new Error(`Cannot apply resource ${getLogName(resource)}: ${err.message} (${err.operation})`);
 	});
 }
 
