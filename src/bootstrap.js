@@ -44,6 +44,7 @@ const argv = require('yargs')
 	.array('exclude').default('exclude', []).alias('x', 'exclude').describe('exclude', 'Template module to exclude')
 	.array('define').default('define', []).alias('D', 'define').describe('define', 'Define/Override a setting on the command-line')
 	.array('include-kind').default('include-kind', []).describe('include-kind', 'Only include resources of the given kind')
+	.string('default-strategy').default('default-strategy', 'legacy').describe('default-strategy', 'The default strategy to use for applying resources')
 	.coerce(['exclude', 'define'], value => {
 		return typeof value === 'string' ? [value] : value;
 	})
@@ -92,77 +93,142 @@ function getLogName(resource) {
 	return `${resource.apiVersion}.${resource.kind} ${resource.metadata.name}`;
 }
 
-function getApplyFlags(annotations) {
-	// Process all annotations into flags.
-	// If there are annotations for this tool that we do not know: Immediately abort, as these
-	// annotations may require a behavior that we simply do not provide.
-	const group = 'bootstrap.k8s.collaborne.com';
-	const flags = {
-		IGNORE_PATCH_FAILURES: false,
-		MANUAL_ONLY: false,
-		UPDATE_ALLOWED: true,
-	};
-	for (const annotation of Object.keys(annotations)) {
-		if (!annotation.startsWith(`${group}/`)) {
-			// Irrelevant for us.
-			continue;
+function getK8sAccessor(k8sClient, apiVersion, kind, namespace) {
+	try {
+		const k8sGroup = k8sClient.group(apiVersion);
+
+		let accessor;
+		if (namespace) {
+			const k8sNamespace = k8sGroup.ns(namespace);
+			assert(Boolean(k8sNamespace));
+			accessor = k8sNamespace[kind.toLowerCase()];
+		} else {
+			accessor = k8sGroup[kind.toLowerCase()];
 		}
-		const name = annotation.substring(annotation.indexOf('/') + 1);
-		const value = annotations[annotation];
-		switch (name) {
-		case 'ignore-patch-failures':
-			flags.IGNORE_PATCH_FAILURES = value === 'true';
-			break;
-		case 'manual':
-			flags.MANUAL_ONLY = value === 'true';
-			break;
-		case 'update-allowed':
-			flags.UPDATE_ALLOWED = value === 'true';
-			break;
-		default:
-			throw new Error(`Unrecognized annotation '${annotation}'`);
-		}
+
+		return accessor;
+	} catch (err) {
+		throw new Error(`Cannot instantiate the API for ${apiVersion}.${kind}: ${err.message}`);
 	}
-	return flags;
+}
+
+function getK8sResource(k8sClient, apiVersion, kind, namespace, name) {
+	const accessor = getK8sAccessor(k8sClient, apiVersion, kind, namespace);
+	if (!accessor) {
+		throw new Error(`Cannot find API for ${apiVersion}.${kind}`);
+	}
+
+	return accessor(name);
+}
+
+function strategyFail(k8sClient, k8sResource, resource) {
+	// This doesn't do anything, but it prevents the logic building the strategy from implicitly adding 'create'.
+	// The strategy execution code will therefore reject the apply.
+	throw new Error(`Explicitly failing ${getLogName(resource)}`);
+}
+
+async function strategySkip(k8sClient, k8sResource, resource) {
+	// A strategy that simply returns "success!"
+	// This can be used to silently ignore updates in some cases.
+	return {status: `Skipping ${getLogName(resource)}`};
+}
+
+async function strategyUpdate(k8sClient, resource) {
+	const k8sResource = getK8sResource(k8sClient, resource.apiVersion, resource.kind, resource.metadata.namespace, resource.metadata.name);
+
+	let resourceVersion;
+	if (resource.meta && resource.metadata.resourceVersion) {
+		resourceVersion = resource.metadata.resourceVersion;
+	} else {
+		const knownResource = await k8sResource.get();
+		resourceVersion = knownResource.metadata.resourceVersion;
+	}
+
+	const resourceVersionMetadata = {
+		metadata: {
+			resourceVersion: resourceVersion,
+		},
+	};
+
+	return k8sResource.update(deepMerge.all([resource, resourceVersionMetadata]));
+}
+
+async function strategyPatch(k8sClient, resource) {
+	const k8sResource = getK8sResource(k8sClient, resource.apiVersion, resource.kind, resource.metadata.namespace, resource.metadata.name);
+
+	// PATCH may not work on all resources in all situations:
+	// k8s 1.5: TPRs cannot be patched, and lead to a 500 error. An UPDATE tends to work in these cases.
+	// k8s 1.10?+: CRDs cannot be patched with a strategic merge patch, and we'll get a 415 Unsupported Media Type. Switching to a regular merge patch should usually work.
+	// The 500 error should be handled by adding 'update' to the strategy (or using 'smart'). For the CRD issue we can try with both types of patches here.
+	try {
+		return await k8sResource.patch(resource, 'application/strategic-merge-patch+json');
+	} catch (err) {
+		if (err.reason === 'UnsupportedMediaType') {
+			return k8sResource.patch(resource, 'application/merge-patch+json');
+		}
+
+		throw err;
+	}
+}
+
+function strategyCreate(k8sClient, resource) {
+	const k8sResource = getK8sResource(k8sClient, resource.apiVersion, resource.kind, resource.metadata.namespace, resource.metadata.name);
+
+	// We need to simulate '--save-config' here, otherwise changes cannot not be properly 'apply'-ed later.
+	const saveConfigMetadata = {
+		metadata: {
+			annotations: {
+				'kubectl.kubernetes.io/last-applied-configuration': JSON.stringify(resource),
+			},
+		},
+	};
+	return k8sResource.create(deepMerge(resource, saveConfigMetadata));
+}
+
+/** All resources that the smart strategy will default to patching rather than updating */
+const SMART_PATCH_KINDS = ['v1.Service', 'v1.ConfigMap', 'v1.Secret'];
+
+/**
+ * Smart strategy
+ *
+ * Ideally we want to replace the existing resource with whatever we rendered through the template.
+ * If the resource doesn't yet exist, then that should be considered "just fine" and the resource needs
+ * to be created instead.
+ *
+ * Updating resources may fail when the resource has immutable fields which are not part of the original specification,
+ * for example a service will usually get a `clusterIP` assigned if it didn't provide any. Any future update for these
+ * must then provide this value, or use a PATCH approach -- which has some problems with introducing "drift".
+ */
+async function strategySmart(k8sClient, resource, flags) {
+	const matchKind = `${resource.apiVersion}.${resource.kind}`;
+
+	// Check the type, and decide whether to assume patching or updating.
+	// In either case if things fail and the resource doesn't exist try to create it.
+	const strategy = SMART_PATCH_KINDS.includes(matchKind) || flags.UPDATE_ALLOWED === false ? strategyPatch : strategyUpdate;
+	try {
+		return await strategy(k8sClient, resource);
+	} catch (err) {
+		if (err.reason !== 'NotFound') {
+			throw err;
+		}
+
+		return strategyCreate(k8sClient, resource);
+	}
 }
 
 /**
- * Apply the given resource into the current kubernetes context.
+ * Legacy strategy for applying resources
  *
- * @param {Object} k8sClient the kubernetes client to use for applying the resource
- * @param {Object} resource the resource
- * @return {Promise<Object>} a promise to the update result object
+ * Historically we tried to first PATCH the resource, but that lead to a couple of ugly problems, such as the
+ * inability to actually remove environment variables etc. After a while the target environment will invariably start
+ * to drift away from the intended/documented state in the templates.
+ * A annotation bootstrap.k8s.collaborne.com/ignore-patch-failures (with a "true" value) is used to decide whether
+ * a patch failure would actually be considered a problem, further increasing the "weirdness"/"drifting" chance for the environment.
+ *
+ * This function contains the complete legacy implementation, which roughly translates to a 'patch,update,create'.
  */
-async function applyResource(k8sClient, resource) {
-	const flags = getApplyFlags(resource.metadata.annotations);
-
-	if (flags.MANUAL_ONLY) {
-		// Resource is not to be applied automatically, stop here.
-		logger.info(`Skipping manual resource ${getLogName(resource)}`);
-		return resource;
-	}
-
-	let k8sResource;
-	try {
-		const k8sGroup = k8sClient.group(resource.apiVersion);
-
-		let accessor;
-		if (resource.metadata && resource.metadata.namespace) {
-			const k8sNamespace = k8sGroup.ns(resource.metadata.namespace);
-			assert(Boolean(k8sNamespace));
-			accessor = k8sNamespace[resource.kind.toLowerCase()];
-		} else {
-			accessor = k8sGroup[resource.kind.toLowerCase()];
-		}
-
-		if (!accessor) {
-			throw new Error(`Cannot find API for creating ${getLogName(resource)}`);
-		}
-
-		k8sResource = accessor(resource.metadata.name);
-	} catch (err) {
-		throw new Error(`Cannot instantiate the API for creating ${getLogName(resource)}: ${err.message}`);
-	}
+async function strategyLegacy(k8sClient, resource, flags) {
+	const k8sResource = getK8sResource(k8sClient, resource.apiVersion, resource.kind, resource.metadata.namespace, resource.metadata.name);
 
 	/** The last attempted operation */
 	let op;
@@ -171,7 +237,9 @@ async function applyResource(k8sClient, resource) {
 	let result;
 	try {
 		// First try patching, then replacing, and and fall back to creation if the object doesn't exist.
-		// TODO: replace might fail, but we can try delete+post.
+		// If REPLACE fails we could try do a DELETE+CREATE, but that may lead to interesting state problems
+		// for controllers/operators monitoring that resource. In particular we mustn't do that for jobs, where the whole idea
+		// is that they run once to completion.
 		try {
 			op = 'PATCH';
 			result = await k8sResource.patch(resource);
@@ -217,6 +285,134 @@ async function applyResource(k8sClient, resource) {
 	} catch (err) {
 		throw new Error(`Cannot apply resource ${getLogName(resource)}: ${err.message} (attempted ${op})`);
 	}
+}
+
+/** All known strategies */
+const STRATEGIES = {
+	fail: strategyFail,
+	skip: strategySkip,
+
+	create: strategyCreate,
+	patch: strategyPatch,
+	update: strategyUpdate,
+
+	legacy: strategyLegacy,
+	smart: strategySmart,
+};
+
+function parseStrategyAnnotation(value) {
+	// Value is a comma-delimited list of update approaches.
+	// Each approach is tried, and if it works the resource is considered "updated".
+	// The value "skip" and "fail" can be used to explicitly skip or fail the update.
+	// The value "smart" can be used to select the default-for-this-resource-kind, which is the default.
+	// The value "legacy" can used to use the legacy approach
+	const strategies = value.split(',');
+	const unknownStrategies = strategies.filter(strategy => !STRATEGIES[strategy]);
+	if (unknownStrategies.length > 0) {
+		// Any invalid value invalidates everything, we're not selective here!
+		throw new Error(`Unrecognized strategies '${unknownStrategies}'`);
+	}
+	return strategies;
+}
+
+function getApplyFlags(annotations) {
+	// Process all annotations into flags.
+	// If there are annotations for this tool that we do not know: Immediately abort, as these
+	// annotations may require a behavior that we simply do not provide.
+	const group = 'bootstrap.k8s.collaborne.com';
+	const flags = {
+		MANUAL_ONLY: false,
+		STRATEGY: [argv.defaultStrategy],
+		UPDATE_ALLOWED: true,
+	};
+	let ignorePatchFailures = false;
+	for (const annotation of Object.keys(annotations)) {
+		if (!annotation.startsWith(`${group}/`)) {
+			// Irrelevant for us.
+			continue;
+		}
+		const name = annotation.substring(annotation.indexOf('/') + 1);
+		const value = annotations[annotation];
+		switch (name) {
+		case 'ignore-patch-failures':
+			ignorePatchFailures = value === 'true';
+			break;
+		case 'manual':
+			flags.MANUAL_ONLY = value === 'true';
+			break;
+		case 'strategy':
+			flags.STRATEGY = parseStrategyAnnotation(value);
+			break;
+		case 'update-allowed':
+			flags.UPDATE_ALLOWED = value === 'true';
+			break;
+		default:
+			throw new Error(`Unrecognized annotation '${annotation}'`);
+		}
+	}
+
+	// Sanity check the final flag values.
+	// Note that 'manual' doesn't create an error, as manual serves the function to disable the whole automatism.
+	if (!flags.UPDATE_ALLOWED && flags.STRATEGY.includes('update')) {
+		throw new Error(`${group}/update-allowed cannot be 'false' when the strategy includes 'update'`);
+	}
+
+	if (ignorePatchFailures) {
+		// Obsolete way to control the strategy: Allow skipping if this fail
+		// Typical assumption is that the strategy is now set to ['smart'].
+		logger.info('Using \'skip\' as last strategy');
+		flags.STRATEGY.push('skip');
+	}
+
+	return flags;
+}
+
+/**
+ * Apply the given resource into the current kubernetes context.
+ *
+ * @param {Object} k8sClient the kubernetes client to use for applying the resource
+ * @param {Object} resource the resource
+ * @return {Promise<Object>} a promise to the update result object
+ */
+async function applyResource(k8sClient, resource) {
+	const flags = getApplyFlags(resource.metadata.annotations);
+
+	if (flags.MANUAL_ONLY) {
+		// Resource is not to be applied automatically, stop here.
+		logger.info(`Skipping manual resource ${getLogName(resource)}`);
+		return resource;
+	}
+
+	// Try to update the resource according to the strategy
+	// We have three potential outcomes here:
+	// 1. The strategy worked out, and the resource is now "updated"
+	// 2. The strategy recognized that the resource is not in the right state
+	// 3. The strategy failed completely for some other odd reason.
+	// Right now we consider the cases 2 and 3 to be the same in effect, and in both cases we will try
+	// the next strategy.
+	let result;
+	let strategy;
+	let success;
+	for (strategy of flags.STRATEGY) {
+		try {
+			const runStrategy = STRATEGIES[strategy];
+			logger.debug(`${getLogName(resource)}: Trying ${strategy}`);
+			result = await runStrategy(k8sClient, resource, flags);
+			logger.debug(`${strategy.toUpperCase()} ${getLogName(resource)}: ${JSON.stringify(result.status)}`);
+			success = true;
+			break;
+		} catch (err) {
+			// Fine, try the next one then.
+			logger.info(`${getLogName(resource)}: ${strategy} failed: ${err.message}`);
+		}
+	}
+
+	// XXX: Can we check result.status here instead?
+	if (!success) {
+		// None of the strategies worked
+		throw new Error(`Cannot apply resource ${getLogName(resource)} through '${flags.STRATEGY}'`);
+	}
+	return result;
 }
 
 /**
