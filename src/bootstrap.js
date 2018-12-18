@@ -84,6 +84,33 @@ function getLogName(resource) {
 	return `${resource.apiVersion}.${resource.kind} ${resource.metadata.name}`;
 }
 
+function getApplyFlags(annotations) {
+	// Process all annotations into flags.
+	// If there are annotations for this tool that we do not know: Immediately abort, as these
+	// annotations may require a behavior that we simply do not provide.
+	return Object.keys(annotations || {}).reduce((flags, annotation) => {
+		if (!annotation.startsWith('bootstrap.k8s.collaborne.com/')) {
+			// Irrelevant for us.
+			return flags;
+		}
+		const value = annotations[annotation];
+		switch (annotation) {
+		case 'bootstrap.k8s.collaborne.com/ignore-patch-failures':
+			return Object.assign(flags, {IGNORE_PATCH_FAILURES: value === 'true'});
+		case 'bootstrap.k8s.collaborne.com/manual':
+			return Object.assign(flags, {MANUAL_ONLY: value === 'true'});
+		case 'bootstrap.k8s.collaborne.com/update-allowed':
+			return Object.assign(flags, {UPDATE_ALLOWED: value === 'true'});
+		default:
+			throw new Error(`Unrecognized annotation ${annotation}`);
+		}
+	}, {
+		IGNORE_PATCH_FAILURES: false,
+		MANUAL_ONLY: false,
+		UPDATE_ALLOWED: true,
+	});
+}
+
 /**
  * Apply the given resource into the current kubernetes context.
  *
@@ -91,7 +118,9 @@ function getLogName(resource) {
  * @param {Object} resource
  */
 function applyResource(k8sClient, resource) {
-	if (resource.metadata.annotations && resource.metadata.annotations['bootstrap.k8s.collaborne.com/manual'] === 'true') {
+	const flags = getApplyFlags(resource.metadata.annotations);
+
+	if (flags.MANUAL_ONLY) {
 		// Resource is not to be applied automatically, stop here.
 		logger.info(`Skipping manual resource ${getLogName(resource)}`);
 		return Promise.resolve(resource);
@@ -125,34 +154,6 @@ function applyResource(k8sClient, resource) {
 			return result;
 		};
 	}
-
-	// Process all annotations into flags.
-	// If there are annotations for this tool that we do not know: Immediately abort, as these
-	// annotations may require a behavior that we simply do not provide.
-	const flags = Object.keys(resource.metadata.annotations || {}).reduce((flags, annotation) => {
-		if (!annotation.startsWith('bootstrap.k8s.collaborne.com/')) {
-			// Irrelevant for us.
-			return flags;
-		}
-		const value = resource.metadata.annotations[annotation];
-		switch (annotation) {
-		case 'bootstrap.k8s.collaborne.com/ignore-patch-failures':
-			return Object.assign(flags, {IGNORE_PATCH_FAILURES: value === 'true'});
-		case 'bootstrap.k8s.collaborne.com/manual':
-			// This annotation means the resource will only be updated manually, so it shouldn't have reached this point.
-			if (value === 'true') {
-				throw new Error(`Unexpected resource ${getLogName(resource)} with ${annotation} set to true`);
-			}
-			break;
-		case 'bootstrap.k8s.collaborne.com/update-allowed':
-			return Object.assign(flags, {UPDATE_ALLOWED: value === 'true'});
-		default:
-			throw new Error(`Unrecognized annotation ${annotation} on ${getLogName(resource)}`);
-		}
-	}, {
-		IGNORE_PATCH_FAILURES: false,
-		UPDATE_ALLOWED: true,
-	});
 
 	// First try patching, then replacing, and and fall back to creation if the object doesn't exist.
 	// TODO: replace might fail, but we can try delete+post.
