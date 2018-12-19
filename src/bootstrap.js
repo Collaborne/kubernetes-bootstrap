@@ -97,28 +97,33 @@ function getApplyFlags(annotations) {
 	// If there are annotations for this tool that we do not know: Immediately abort, as these
 	// annotations may require a behavior that we simply do not provide.
 	const group = 'bootstrap.k8s.collaborne.com';
-	return Object.keys(annotations || {}).reduce((flags, annotation) => {
+	const flags = {
+		IGNORE_PATCH_FAILURES: false,
+		MANUAL_ONLY: false,
+		UPDATE_ALLOWED: true,
+	};
+	for (const annotation of Object.keys(annotations)) {
 		if (!annotation.startsWith(`${group}/`)) {
 			// Irrelevant for us.
-			return flags;
+			continue;
 		}
 		const name = annotation.substring(annotation.indexOf('/') + 1);
 		const value = annotations[annotation];
 		switch (name) {
 		case 'ignore-patch-failures':
-			return Object.assign(flags, {IGNORE_PATCH_FAILURES: value === 'true'});
+			flags.IGNORE_PATCH_FAILURES = value === 'true';
+			break;
 		case 'manual':
-			return Object.assign(flags, {MANUAL_ONLY: value === 'true'});
+			flags.MANUAL_ONLY = value === 'true';
+			break;
 		case 'update-allowed':
-			return Object.assign(flags, {UPDATE_ALLOWED: value === 'true'});
+			flags.UPDATE_ALLOWED = value === 'true';
+			break;
 		default:
 			throw new Error(`Unrecognized annotation ${annotation}`);
 		}
-	}, {
-		IGNORE_PATCH_FAILURES: false,
-		MANUAL_ONLY: false,
-		UPDATE_ALLOWED: true,
-	});
+	}
+	return flags;
 }
 
 /**
