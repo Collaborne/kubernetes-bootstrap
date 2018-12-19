@@ -234,6 +234,11 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 			}
 			const inputFileName = path.resolve(root, fileStats.name);
 			fs.readFile(inputFileName, function(err, contents) {
+				if (err) {
+					logger.error(`Cannot read ${inputFileName}: ${err.message}`);
+					return next();
+				}
+
 				const relativeInputFileName = path.relative(templatesDir, inputFileName);
 				const outputFileName = path.resolve(outputDir, relativeInputFileName);
 				mkdirp(path.dirname(outputFileName), function(err, made) {
