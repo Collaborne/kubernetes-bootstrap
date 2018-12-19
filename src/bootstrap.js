@@ -406,8 +406,6 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 function loadProperties(settingsFileNames, commandlineProperties) {
 	return new Promise(function(resolve, reject) {
 		function mergeProperties(deployProperties) {
-			// niceName can be empty here, which is fine ... but then it must be explicitly configured
-			// in the deploy.yaml or the command line.
 			let environment = deployProperties.environment || commandlineProperties.environment;
 			if (!environment) {
 				throw new Error(`Unknown environment, aborting`);
