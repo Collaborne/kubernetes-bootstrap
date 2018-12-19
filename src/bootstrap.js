@@ -60,10 +60,12 @@ const argv = require('yargs')
  * @param {Object} [extraAnnotations] additional annotations to apply to the namespace
  * @return {Promise<Object>} a promise to the namespace resource
  */
-function ensureNamespace(k8sClient, environment, extraLabels = {}, extraAnnotations = {}) {
+async function ensureNamespace(k8sClient, environment, extraLabels = {}, extraAnnotations = {}) {
 	const nsResource = k8sClient.namespace(environment);
 
-	return nsResource.get().catch(err => {
+	try {
+		return await nsResource.get();
+	} catch (err) {
 		if (err.reason === 'NotFound') {
 			// Create a new one
 			const labels = Object.assign({}, extraLabels, {
@@ -83,18 +85,11 @@ function ensureNamespace(k8sClient, environment, extraLabels = {}, extraAnnotati
 
 		// Different error, let it bubble out.
 		throw err;
-	});
+	}
 }
 
 function getLogName(resource) {
 	return `${resource.apiVersion}.${resource.kind} ${resource.metadata.name}`;
-}
-
-function logResult(resource, op) {
-	return result => {
-		logger.debug(`${op} ${getLogName(resource)}: ${JSON.stringify(result.status)}`);
-		return result;
-	};
 }
 
 function getApplyFlags(annotations) {
@@ -131,13 +126,13 @@ function getApplyFlags(annotations) {
  * @param {Object} resource the resource
  * @return {Promise<Object>} a promise to the update result object
  */
-function applyResource(k8sClient, resource) {
+async function applyResource(k8sClient, resource) {
 	const flags = getApplyFlags(resource.metadata.annotations);
 
 	if (flags.MANUAL_ONLY) {
 		// Resource is not to be applied automatically, stop here.
 		logger.info(`Skipping manual resource ${getLogName(resource)}`);
-		return Promise.resolve(resource);
+		return resource;
 	}
 
 	let k8sResource;
@@ -154,50 +149,67 @@ function applyResource(k8sClient, resource) {
 		}
 
 		if (!accessor) {
-			return Promise.reject(new Error(`Cannot find API for creating ${getLogName(resource)}`));
+			throw new Error(`Cannot find API for creating ${getLogName(resource)}`);
 		}
 
 		k8sResource = accessor(resource.metadata.name);
 	} catch (err) {
-		return Promise.reject(new Error(`Cannot instantiate the API for creating ${getLogName(resource)}: ${err.message}`));
+		throw new Error(`Cannot instantiate the API for creating ${getLogName(resource)}: ${err.message}`);
 	}
 
-	// First try patching, then replacing, and and fall back to creation if the object doesn't exist.
-	// TODO: replace might fail, but we can try delete+post.
-	return k8sResource.patch(resource).then(logResult(resource, 'PATCH')).catch(err => {
-		// XXX: what would be the correct 'err.reason'?
-		if (err.code === 405 && flags.UPDATE_ALLOWED) {
-			// Cannot patch, try replace
-			return k8sResource.update(resource).then(logResult(resource, 'UPDATE'));
-		} else if (err.code === 500 && flags.UPDATE_ALLOWED) {
-			// Error on the server side, try replace.
-			// This seems to happen with ThirdPartyResources in 1.5:
-			// May 29 08:41:14 minikube localkube[24061]: E0529 08:41:14.784327   24061 errors.go:63] apiserver received an error that is not an unversioned.Status: unable to find api field in struct ThirdPartyResourceData for the json field "spec"
-			logger.warn(`Received ${err.status}: ${err.message}, trying to replace the object`);
-			return k8sResource.update(resource).then(logResult(resource, 'UPDATE'));
-		} else if (err.reason === 'NotFound') {
-			// Non-existing resource, try creating
-			// We need to simulate '--save-config' here, otherwise changes will not be properly applied later.
-			const saveConfigMetadata = {
-				metadata: {
-					annotations: {
-						'kubectl.kubernetes.io/last-applied-configuration': JSON.stringify(resource)
+	/** The last attempted operation */
+	let op;
+
+	/** The result of that operation */
+	let result;
+	try {
+		// First try patching, then replacing, and and fall back to creation if the object doesn't exist.
+		// TODO: replace might fail, but we can try delete+post.
+		try {
+			op = 'PATCH';
+			result = await k8sResource.patch(resource);
+		} catch (err) {
+			// XXX: what would be the correct 'err.reason'?
+			if (err.code === 405 && flags.UPDATE_ALLOWED) {
+				// Cannot patch, try replace
+				op = 'UPDATE';
+				result = await k8sResource.update(resource);
+			} else if (err.code === 500 && flags.UPDATE_ALLOWED) {
+				// Error on the server side, try replace.
+				// This seems to happen with ThirdPartyResources in 1.5:
+				// May 29 08:41:14 minikube localkube[24061]: E0529 08:41:14.784327   24061 errors.go:63] apiserver received an error that is not an unversioned.Status: unable to find api field in struct ThirdPartyResourceData for the json field "spec"
+				logger.warn(`Received ${err.status}: ${err.message}, trying to replace the object`);
+				op = 'UPDATE';
+				result = await k8sResource.update(resource);
+			} else if (err.reason === 'NotFound') {
+				// Non-existing resource, try creating
+				// We need to simulate '--save-config' here, otherwise changes will not be properly applied later.
+				const saveConfigMetadata = {
+					metadata: {
+						annotations: {
+							'kubectl.kubernetes.io/last-applied-configuration': JSON.stringify(resource)
+						}
 					}
-				}
-			};
-			return k8sResource.create(deepMerge(resource, saveConfigMetadata)).then(logResult(resource, 'CREATE'));
-		} else if (flags.IGNORE_PATCH_FAILURES) {
-			// Certain resources are "one-shot": When jobs exist many fields are immutable, but that's perfectly fine: the job represents
-			// the state at which it executed. If a resource has the annotation bootstrap.k8s.collaborne.com/ignore-patch-failures, we ignore
-			// patch failures gracefully.
-			return logResult(resource, 'SKIP')({status: `Ignoring patch failure: ${err.message}`});
+				};
+				op = 'CREATE';
+				result = await k8sResource.create(deepMerge(resource, saveConfigMetadata));
+			} else if (flags.IGNORE_PATCH_FAILURES) {
+				// Certain resources are "one-shot": When jobs exist many fields are immutable, but that's perfectly fine: the job represents
+				// the state at which it executed. If a resource has the annotation bootstrap.k8s.collaborne.com/ignore-patch-failures, we ignore
+				// patch failures gracefully.
+				op = 'SKIP';
+				result = {status: `Ignoring patch failure: ${err.message}`};
+			} else {
+				// Otherwise: Throw the error further.
+				throw err;
+			}
 		}
 
-		// Otherwise: Throw the error further.
-		throw err;
-	}).catch(err => {
-		throw new Error(`Cannot apply resource ${getLogName(resource)}: ${err.message} (${err.operation})`);
-	});
+		logger.debug(`${op} ${getLogName(resource)}: ${JSON.stringify(result.status)}`);
+		return result;
+	} catch (err) {
+		throw new Error(`Cannot apply resource ${getLogName(resource)}: ${err.message} (attempted ${op})`);
+	}
 }
 
 /**
@@ -485,68 +497,64 @@ function resolveModules(includedModules, excludedModules) {
 	});
 }
 
-k8s(argv.kubeconfig, argv.context, '').then(k8sClient => {
-	return Promise.resolve()
-		.then(() => {
-			const properties = util.definesToObject(argv.define);
+async function main() {
+	const k8sClient = await k8s(argv.kubeconfig, argv.context, '');
+	const properties = util.definesToObject(argv.define);
 
-			const settingsFileNames = [argv.deploySettings];
-			if (!argv.disableOverrides && argv.deploySettingsOverrides) {
-				settingsFileNames.push(argv.deploySettingsOverrides);
+	const settingsFileNames = [argv.deploySettings];
+	if (!argv.disableOverrides && argv.deploySettingsOverrides) {
+		settingsFileNames.push(argv.deploySettingsOverrides);
+	}
+
+	const loadedProperties = await loadProperties(settingsFileNames.map(settingsFileName => path.resolve(settingsFileName)), properties);
+	// Log the properties before adding the environment variables into them
+	// Environment variables contain typically weird things, and likely secrets that we do not want to expose here
+	logger.debug(`Resolved properties: ${JSON.stringify(loadedProperties, null, 2)}`);
+
+	const mergedProperties = Object.assign({}, loadedProperties, {env: process.env});
+
+	let prepare;
+	let processResource;
+	if (argv.outputOnly) {
+		prepare = Promise.resolve();
+		processResource = resource => {
+			logger.debug(`Processing: ${JSON.stringify(resource)}`);
+			return Promise.resolve(resource);
+		};
+	} else {
+		const namespace = mergedProperties.environment;
+		prepare = ensureNamespace(k8sClient, namespace, {}).then(ns => {
+			if (argv.authorize) {
+				return authorizeK8s(argv.kubeconfig, ns.metadata.name, argv.serviceAccount, false, 'collaborne-registry');
 			}
 
-			return loadProperties(settingsFileNames.map(settingsFileName => path.resolve(settingsFileName)), properties);
-		})
-		.then(properties => {
-			// Log the properties before adding the environment variables into them
-			// Environment variables contain typically weird things, and likely secrets that we do not want to expose here
-			logger.debug(`Resolved properties: ${JSON.stringify(properties, null, 2)}`);
-			return properties;
-		})
-		.then(properties => Object.assign({}, properties, {env: process.env}))
-		.then(properties => {
-			let result;
-			let processResource;
-			if (argv.outputOnly) {
-				result = Promise.resolve();
-				processResource = resource => {
-					logger.debug(`Processing: ${JSON.stringify(resource)}`);
-					return Promise.resolve(resource);
-				};
-			} else {
-				const namespace = properties.environment;
-				result = ensureNamespace(k8sClient, namespace, {}).then(ns => {
-					if (argv.authorize) {
-						return authorizeK8s(argv.kubeconfig, ns.metadata.name, argv.serviceAccount, false, 'collaborne-registry');
-					}
-
-					// Ignored by caller
-					return undefined;
-				});
-				processResource = applyResource.bind(undefined, k8sClient);
-			}
-
-			if (argv.includeKind && argv.includeKind.length > 0) {
-				const innerProcessResource = processResource;
-				processResource = resource => {
-					// Must have specified either 'kind' or 'api.version/kind' to be included.
-					const matchKind = `${resource.apiVersion}.${resource.kind}`;
-					if (argv.includeKind.indexOf(resource.kind) === -1 && argv.includeKind.indexOf(matchKind) === -1) {
-						logger.debug(`Skipping ${resource.apiVersion}.${resource.kind} ${resource.metadata.name}: Not explicitly included`);
-						return Promise.resolve(resource);
-					}
-
-					return innerProcessResource(resource);
-				};
-			}
-
-			return result
-				.then(() => resolveModules(argv._, argv.exclude))
-				.then(modules => processTemplates(k8sClient, argv.templateDirectory, modules, argv.outputDirectory, properties, processResource));
-		})
-		.then(resources => logger.info(`Created ${resources.length} resources`))
-		.catch(err => {
-			logger.error(`Cannot apply resources: ${err.message}`, err);
-			process.exit(1);
+			// Ignored by caller
+			return undefined;
 		});
+		processResource = applyResource.bind(undefined, k8sClient);
+	}
+
+	if (argv.includeKind && argv.includeKind.length > 0) {
+		const innerProcessResource = processResource;
+		processResource = resource => {
+			// Must have specified either 'kind' or 'api.version/kind' to be included.
+			const matchKind = `${resource.apiVersion}.${resource.kind}`;
+			if (argv.includeKind.indexOf(resource.kind) === -1 && argv.includeKind.indexOf(matchKind) === -1) {
+				logger.debug(`Skipping ${resource.apiVersion}.${resource.kind} ${resource.metadata.name}: Not explicitly included`);
+				return Promise.resolve(resource);
+			}
+
+			return innerProcessResource(resource);
+		};
+	}
+
+	await prepare;
+	const modules = await resolveModules(argv._, argv.exclude);
+	const resources = await processTemplates(k8sClient, argv.templateDirectory, modules, argv.outputDirectory, mergedProperties, processResource);
+	logger.info(`Created ${resources.length} resources`);
+}
+
+main().catch(err => {
+	logger.error(`Cannot apply resources: ${err.message}`, err);
+	process.exitCode = 1;
 });
