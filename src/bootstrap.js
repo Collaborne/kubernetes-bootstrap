@@ -102,7 +102,7 @@ function getApplyFlags(annotations) {
 			// Irrelevant for us.
 			return flags;
 		}
-		const name = annotation.substring(annotation.indexOf('/'));
+		const name = annotation.substring(annotation.indexOf('/') + 1);
 		const value = annotations[annotation];
 		switch (name) {
 		case 'ignore-patch-failures':
