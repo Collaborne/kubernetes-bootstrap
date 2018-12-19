@@ -84,6 +84,13 @@ function getLogName(resource) {
 	return `${resource.apiVersion}.${resource.kind} ${resource.metadata.name}`;
 }
 
+function logResult(resource, op) {
+	return function(result) {
+		logger.debug(`${op} ${getLogName(resource)}: ${JSON.stringify(result.status)}`);
+		return result;
+	};
+}
+
 function getApplyFlags(annotations) {
 	// Process all annotations into flags.
 	// If there are annotations for this tool that we do not know: Immediately abort, as these
@@ -148,26 +155,19 @@ function applyResource(k8sClient, resource) {
 		return Promise.reject(new Error(`Cannot instantiate the API for creating ${getLogName(resource)}: ${err.message}`));
 	}
 
-	function logResult(op) {
-		return function(result) {
-			logger.debug(`${op} ${getLogName(resource)}: ${JSON.stringify(result.status)}`);
-			return result;
-		};
-	}
-
 	// First try patching, then replacing, and and fall back to creation if the object doesn't exist.
 	// TODO: replace might fail, but we can try delete+post.
-	return k8sResource.patch(resource).then(logResult('PATCH')).catch(function(err) {
+	return k8sResource.patch(resource).then(logResult(resource, 'PATCH')).catch(function(err) {
 		// XXX: what would be the correct 'err.reason'?
 		if (err.code === 405 && flags.UPDATE_ALLOWED) {
 			// Cannot patch, try replace
-			return k8sResource.update(resource).then(logResult('UPDATE'));
+			return k8sResource.update(resource).then(logResult(resource, 'UPDATE'));
 		} else if (err.code === 500 && flags.UPDATE_ALLOWED) {
 			// Error on the server side, try replace.
 			// This seems to happen with ThirdPartyResources in 1.5:
 			// May 29 08:41:14 minikube localkube[24061]: E0529 08:41:14.784327   24061 errors.go:63] apiserver received an error that is not an unversioned.Status: unable to find api field in struct ThirdPartyResourceData for the json field "spec"
 			logger.warn(`Received ${err.status}: ${err.message}, trying to replace the object`);
-			return k8sResource.update(resource).then(logResult('UPDATE'));
+			return k8sResource.update(resource).then(logResult(resource, 'UPDATE'));
 		} else if (err.reason === 'NotFound') {
 			// Non-existing resource, try creating
 			// We need to simulate '--save-config' here, otherwise changes will not be properly applied later.
@@ -178,7 +178,7 @@ function applyResource(k8sClient, resource) {
 					}
 				}
 			};
-			return k8sResource.create(deepMerge(resource, saveConfigMetadata)).then(logResult('CREATE'));
+			return k8sResource.create(deepMerge(resource, saveConfigMetadata)).then(logResult(resource, 'CREATE'));
 		} else if (flags.IGNORE_PATCH_FAILURES) {
 			// Certain resources are "one-shot": When jobs exist many fields are immutable, but that's perfectly fine: the job represents
 			// the state at which it executed. If a resource has the annotation bootstrap.k8s.collaborne.com/ignore-patch-failures, we ignore
