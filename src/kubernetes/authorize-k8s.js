@@ -4,6 +4,13 @@ const k8s = require('./k8s-client.js');
 
 const logger = require('log4js').getLogger();
 
+function applySecretsToServiceAccount(k8sClient, namespace, serviceAccount, imagePullSecretsName) {
+	// Modify the "default" service account with these new secrets.
+	return k8sClient.ns(namespace).serviceaccount(serviceAccount).patch({
+		imagePullSecrets: [ { name: imagePullSecretsName } ]
+	});
+}
+
 /**
  * Authorize a K8s service account for using AWS ECR.
  *
@@ -72,13 +79,6 @@ function authorizeK8s(kubeConfigPath, namespace = 'default', serviceAccount = 'd
 					type: 'kubernetes.io/dockerconfigjson'
 				};
 
-				function applySecretsToServiceAccount(serviceAccount, imagePullSecretsName) {
-					// Modify the "default" service account with these new secrets.
-					return k8sClient.ns(namespace).serviceaccount(serviceAccount).patch({
-						imagePullSecrets: [ { name: imagePullSecretsName } ]
-					});
-				}
-
 				const secret = k8sClient.ns(namespace).secret(collaborneRegistrySecrets.metadata.name);
 				return secret.update(collaborneRegistrySecrets)
 				.catch(err => {
@@ -88,7 +88,7 @@ function authorizeK8s(kubeConfigPath, namespace = 'default', serviceAccount = 'd
 
 					throw err;
 				})
-				.then(() => applySecretsToServiceAccount(serviceAccount, collaborneRegistrySecrets.metadata.name))
+				.then(() => applySecretsToServiceAccount(k8sClient, namespace, serviceAccount, collaborneRegistrySecrets.metadata.name))
 				.then(result => { logger.debug(`Service account ${serviceAccount} updated with AWS ECR credentials.`); return result; })
 				.catch(err => { throw new Error(`Cannot update the ${serviceAccount} account: ${err.message}`); })
 				.then(resolve, reject);
