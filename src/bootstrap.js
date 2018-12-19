@@ -120,7 +120,7 @@ function getApplyFlags(annotations) {
 			flags.UPDATE_ALLOWED = value === 'true';
 			break;
 		default:
-			throw new Error(`Unrecognized annotation ${annotation}`);
+			throw new Error(`Unrecognized annotation '${annotation}'`);
 		}
 	}
 	return flags;
