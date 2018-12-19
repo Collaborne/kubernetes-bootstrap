@@ -20,12 +20,15 @@ const k8s = require('./kubernetes/k8s-client.js');
 const authorizeK8s = require('./kubernetes/authorize-k8s.js');
 const util = require('./util.js');
 
-const userDir = process.env[(process.platform == 'win32') ? 'USERPROFILE' : 'HOME'];
+const userDir = process.env[process.platform === 'win32' ? 'USERPROFILE' : 'HOME'];
 
 // XXX: yargs cannot handle -Dvar=value, so we preprocess the arguments and replace those with '--define', 'var=value'
 const args = process.argv
 	.slice(2)
-	.map((arg) => arg.startsWith('-D') && arg.length > 2 ? ['--define', arg.substring(2)] : [arg])
+	.map(arg => {
+		const isShortcutDefine = arg.startsWith('-D') && arg.length > 2;
+		return isShortcutDefine ? ['--define', arg.substring(2)] : [arg];
+	})
 	.reduce((result, processedArg) => result.concat(processedArg), []);
 const argv = require('yargs')
 	.boolean('authorize').describe('authorize', 'Inject suitable secrets for accessing AWS ECR into the cluster')
@@ -41,7 +44,9 @@ const argv = require('yargs')
 	.array('exclude').default('exclude', []).alias('x', 'exclude').describe('exclude', 'Template module to exclude')
 	.array('define').default('define', []).alias('D', 'define').describe('define', 'Define/Override a setting on the command-line')
 	.array('include-kind').default('include-kind', []).describe('include-kind', 'Only include resources of the given kind')
-	.coerce(['exclude', 'define'], value => typeof value === 'string' ? [value] : value)
+	.coerce(['exclude', 'define'], value => {
+		return typeof value === 'string' ? [value] : value;
+	})
 	.help()
 	.strict()
 	.parse(args);
@@ -50,9 +55,10 @@ const argv = require('yargs')
  * Ensure that the namespace for the environment exists.
  *
  * @param {Object} k8sClient the kubernetes client
- * @param {string} environment
+ * @param {string} environment the environment name
  * @param {Object} [extraLabels] additional labels to apply to the namespace
  * @param {Object} [extraAnnotations] additional annotations to apply to the namespace
+ * @return {Promise<Object>} a promise to the namespace resource
  */
 function ensureNamespace(k8sClient, environment, extraLabels = {}, extraAnnotations = {}) {
 	const nsResource = k8sClient.namespace(environment);
@@ -68,8 +74,8 @@ function ensureNamespace(k8sClient, environment, extraLabels = {}, extraAnnotati
 				apiVersion: 'v1',
 				kind: 'Namespace',
 				metadata: {
-					labels,
 					annotations,
+					labels,
 				}
 			};
 			return nsResource.create(namespace);
@@ -85,7 +91,7 @@ function getLogName(resource) {
 }
 
 function logResult(resource, op) {
-	return function(result) {
+	return result => {
 		logger.debug(`${op} ${getLogName(resource)}: ${JSON.stringify(result.status)}`);
 		return result;
 	};
@@ -122,7 +128,8 @@ function getApplyFlags(annotations) {
  * Apply the given resource into the current kubernetes context.
  *
  * @param {Object} k8sClient the kubernetes client to use for applying the resource
- * @param {Object} resource
+ * @param {Object} resource the resource
+ * @return {Promise<Object>} a promise to the update result object
  */
 function applyResource(k8sClient, resource) {
 	const flags = getApplyFlags(resource.metadata.annotations);
@@ -140,7 +147,7 @@ function applyResource(k8sClient, resource) {
 		let accessor;
 		if (resource.metadata && resource.metadata.namespace) {
 			const k8sNamespace = k8sGroup.ns(resource.metadata.namespace);
-			assert(!!k8sNamespace);
+			assert(Boolean(k8sNamespace));
 			accessor = k8sNamespace[resource.kind.toLowerCase()];
 		} else {
 			accessor = k8sGroup[resource.kind.toLowerCase()];
@@ -157,7 +164,7 @@ function applyResource(k8sClient, resource) {
 
 	// First try patching, then replacing, and and fall back to creation if the object doesn't exist.
 	// TODO: replace might fail, but we can try delete+post.
-	return k8sResource.patch(resource).then(logResult(resource, 'PATCH')).catch(function(err) {
+	return k8sResource.patch(resource).then(logResult(resource, 'PATCH')).catch(err => {
 		// XXX: what would be the correct 'err.reason'?
 		if (err.code === 405 && flags.UPDATE_ALLOWED) {
 			// Cannot patch, try replace
@@ -183,11 +190,12 @@ function applyResource(k8sClient, resource) {
 			// Certain resources are "one-shot": When jobs exist many fields are immutable, but that's perfectly fine: the job represents
 			// the state at which it executed. If a resource has the annotation bootstrap.k8s.collaborne.com/ignore-patch-failures, we ignore
 			// patch failures gracefully.
-			return logResult(resource, 'SKIP')({ status: `Ignoring patch failure: ${err.message}` });
-		} else {
-			throw err;
+			return logResult(resource, 'SKIP')({status: `Ignoring patch failure: ${err.message}`});
 		}
-	}).catch(function(err) {
+
+		// Otherwise: Throw the error further.
+		throw err;
+	}).catch(err => {
 		throw new Error(`Cannot apply resource ${getLogName(resource)}: ${err.message} (${err.operation})`);
 	});
 }
@@ -209,11 +217,11 @@ function applyResource(k8sClient, resource) {
  * @param {processCallback} processResource function to call with a single resource
  */
 function processTemplates(k8sClient, templatesDir, modules, outputDir, properties, processResource) {
-	return new Promise(function(resolve, reject) {
+	return new Promise(resolve => {
 		const resourcePromises = [];
 		const walker = walk.walk(templatesDir, {});
 		let modulesFiltered = false;
-		walker.on('directories', function(root, dirStatsArray, next) {
+		walker.on('directories', (root, dirStatsArray, next) => {
 			// Remove top-level directories not in the modules array
 			if (!modulesFiltered) {
 				for (let i = dirStatsArray.length - 1; i >= 0; i--) {
@@ -226,14 +234,14 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 			}
 			return next();
 		});
-		walker.on('file', function(root, fileStats, next) {
+		walker.on('file', (root, fileStats, next) => {
 			const ext = path.extname(fileStats.name);
 			if (['.json', '.yml'].indexOf(ext) === -1) {
 				// Skip unsupported files.
 				return next();
 			}
 			const inputFileName = path.resolve(root, fileStats.name);
-			fs.readFile(inputFileName, function(err, contents) {
+			return fs.readFile(inputFileName, (err, contents) => {
 				if (err) {
 					logger.error(`Cannot read ${inputFileName}: ${err.message}`);
 					return next();
@@ -241,9 +249,9 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 
 				const relativeInputFileName = path.relative(templatesDir, inputFileName);
 				const outputFileName = path.resolve(outputDir, relativeInputFileName);
-				mkdirp(path.dirname(outputFileName), function(err, made) {
-					if (err) {
-						logger.error(`Cannot create directory for ${outputFileName}: ${err.message}`);
+				return mkdirp(path.dirname(outputFileName), mkdirpErr => {
+					if (mkdirpErr) {
+						logger.error(`Cannot create directory for ${outputFileName}: ${mkdirpErr.message}`);
 						return next();
 					}
 
@@ -255,54 +263,52 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 					} else {
 						template = contents.toString('UTF-8');
 					}
-					const renderedContents = mustache.render(template, properties, function(partial) {
+					const renderedContents = mustache.render(template, properties, partial => {
 						// Filters are functions that take a buffer-or-string, and produce a buffer-or-string
 						// Generally it's good to stay "buffer-y" for a long time.
 						const filterConstructors = {
-							indent(spaces = 2) {
-								return function(value) {
-									// Force utf8 now: indenting is a string operation.
-									return value.toString('utf8').replace(/^.+/gm, ' '.repeat(spaces) + '$&');
-								}
-							},
-
 							base64() {
-								return function(value) {
+								return value => {
 									if (!Buffer.isBuffer(value)) {
-										throw new Error(`Buffer required for base64`);
+										throw new Error('Buffer required for base64');
 									}
 									return value.toString('base64');
-								}
+								};
+							},
+
+							indent(spaces = 2) {
+								return value => {
+									// Force utf8 now: indenting is a string operation.
+									return value.toString('utf8').replace(/^.+/gm, `${' '.repeat(spaces)}$&`);
+								};
 							},
 
 							newline() {
-								return function(value) {
-									// Force utf8 now: indenting is a string operation.
-									return value.toString('utf8') + '\n'
-								}
+								// Force utf8 now: indenting is a string operation.
+								return value => `${value.toString('utf8')}\n`;
 							}
-						}
+						};
 
 						function parseFilterExpression(filterExpression) {
 							let filterName;
-							let args;
+							let filterArgs;
 							const openIndex = filterExpression.indexOf('(');
 							if (openIndex >= 0) {
 								const closeIndex = filterExpression.indexOf(')', openIndex);
-								args = filterExpression.substring(openIndex + 1, closeIndex).split(',').map(arg => arg.trim());
+								filterArgs = filterExpression.substring(openIndex + 1, closeIndex).split(',').map(arg => arg.trim());
 								filterName = filterExpression.substring(0, openIndex);
 							} else {
-								args = [];
+								filterArgs = [];
 								filterName = filterExpression;
 							}
 							const filterConstructor = filterConstructors[filterName];
 							if (!filterConstructor) {
 								throw new Error(`Cannot create filter '${filterExpression}': Unknown filter ${filterName}`);
 							}
-							return filterConstructor.apply(undefined, args);
+							return filterConstructor(...filterArgs);
 						}
 
-						// partial is filename[|function[([param[,param]]][|...]]
+						// Syntax: partial is filename[|function[([param[,param]]][|...]]
 						const tokens = partial.split(/\|/).map(token => token.trim());
 
 						// First create the filters, and check that each of these are "happy"
@@ -323,18 +329,18 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 
 						// Finally apply the filters in order
 						const value = fs.readFileSync(source);
-						return filters.reduce((result, filter) => filter.call(undefined, result), value);
+						return filters.reduce((result, filter) => filter(result), value);
 					});
-					return fs.writeFile(outputFileName, renderedContents, function(err) {
-						if (err) {
-							logger.error(`Cannot write ${outputFileName}: ${err.message}`);
+					return fs.writeFile(outputFileName, renderedContents, writeErr => {
+						if (writeErr) {
+							logger.error(`Cannot write ${outputFileName}: ${writeErr.message}`);
 							return next();
 						}
 
 						// Push the file also into k8s now
 						// There are two ways for producting multiple items in a single yaml file, either the root-object is a v1.List,
 						// or the documents are concatenated using '---'
-						renderedContents.split(/^---+$/m).filter(document => document.trim().length > 0).map(function(document) {
+						renderedContents.split(/^---+$/m).filter(document => document.trim().length > 0).map(document => {
 							try {
 								const parsedContents = yaml.safeLoad(document);
 								if (!parsedContents) {
@@ -344,14 +350,13 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 
 								if (parsedContents.kind === 'List') {
 									return parsedContents.items;
-								} else {
-									return [parsedContents];
 								}
-							} catch (err) {
-								logger.error(`Cannot load from ${inputFileName}: ${err.message}`);
+								return [parsedContents];
+							} catch (parseErr) {
+								logger.error(`Cannot load from ${inputFileName}: ${parseErr.message}`);
 								return [];
 							}
-						}).reduce(function(agg, documents) {
+						}).reduce((agg, documents) => {
 							return agg.concat(documents);
 						}, []).forEach(document => {
 							// A valid resource at least has a apiVersion and kind, otherwise just report
@@ -369,8 +374,8 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 							// XXX: kubectl always sets the annotations, even when they are empty.
 							const annotations = {};
 							const labels = {
-								'bootstrap.k8s.collaborne.com/source-file': util.cleanLabelValue(relativeInputFileName),
 								'bootstrap.k8s.collaborne.com/source-directory': util.cleanLabelValue(path.dirname(relativeInputFileName)),
+								'bootstrap.k8s.collaborne.com/source-file': util.cleanLabelValue(relativeInputFileName),
 								'bootstrap.k8s.collaborne.com/source-name': util.cleanLabelValue(path.basename(relativeInputFileName))
 							};
 
@@ -402,21 +407,21 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 				});
 			});
 		});
-		walker.on('end', function() {
+		walker.on('end', () => {
 			resolve(Promise.all(resourcePromises));
 		});
 	});
 }
 
 function loadProperties(settingsFileNames, commandlineProperties) {
-	return new Promise(function(resolve, reject) {
+	return new Promise((resolve, reject) => {
 		function mergeProperties(deployProperties) {
 			let environment = deployProperties.environment || commandlineProperties.environment;
 			if (!environment) {
-				throw new Error(`Unknown environment, aborting`);
+				throw new Error('Unknown environment, aborting');
 			}
 
-			environment = environment.replace(/[^a-zA-Z0-9-]+/g, '-')
+			environment = environment.replace(/[^a-zA-Z0-9-]+/g, '-');
 			logger.info(`Using environment name '${environment}'`);
 			const internalProperties = {
 				environment
@@ -425,7 +430,7 @@ function loadProperties(settingsFileNames, commandlineProperties) {
 			return deepMerge.all([deployProperties, commandlineProperties, internalProperties]);
 		}
 
-		const deployProperties = settingsFileNames.map(function(fileName) {
+		const deployProperties = settingsFileNames.map(fileName => {
 			let contents;
 			try {
 				if (fs.statSync(fileName).isFile()) {
@@ -450,8 +455,8 @@ function loadProperties(settingsFileNames, commandlineProperties) {
 function resolveModules(includedModules, excludedModules) {
 	// Calculate the modules to use:
 	// Start from all in templates/, filtered by the ones explicitly given, removing all that are explicitly removed.
-	return new Promise(function(resolve, reject) {
-		fs.readdir(argv.templateDirectory, function(err, availableModules) {
+	return new Promise((resolve, reject) => {
+		fs.readdir(argv.templateDirectory, (err, availableModules) => {
 			if (err) {
 				return reject(err);
 			}
@@ -480,64 +485,68 @@ function resolveModules(includedModules, excludedModules) {
 	});
 }
 
-k8s(argv.kubeconfig, argv.context, '').then(function(k8sClient) {
-	return Promise.resolve().then(() => {
-		const properties = util.definesToObject(argv.define);
+k8s(argv.kubeconfig, argv.context, '').then(k8sClient => {
+	return Promise.resolve()
+		.then(() => {
+			const properties = util.definesToObject(argv.define);
 
-		const settingsFileNames = [argv.deploySettings];
-		if (!argv.disableOverrides && argv.deploySettingsOverrides) {
-			settingsFileNames.push(argv.deploySettingsOverrides);
-		}
-
-		return loadProperties(settingsFileNames.map(settingsFileName => path.resolve(settingsFileName)), properties);
-	})
-	.then(properties => {
-		// Log the properties before adding the environment variables into them
-		// Environment variables contain typically weird things, and likely secrets that we do not want to expose here
-		logger.debug(`Resolved properties: ${JSON.stringify(properties, null, 2)}`);
-		return properties;
-	})
-	.then(properties => Object.assign({}, properties, {env: process.env}))
-	.then(properties => {
-		let result;
-		let processResource;
-		if (argv.outputOnly) {
-			result = Promise.resolve();
-			processResource = resource => {
-				logger.debug(`Processing: ${JSON.stringify(resource)}`);
-				return Promise.resolve(resource);
-			};
-		} else {
-			const namespace = properties.environment;
-			result = ensureNamespace(k8sClient, namespace, {}).then(ns => {
-				if (argv.authorize) {
-					return authorizeK8s(argv.kubeconfig, ns.metadata.name, argv.serviceAccount, false, 'collaborne-registry');
-				}
-			});
-			processResource = applyResource.bind(undefined, k8sClient);
-		}
-
-		if (argv.includeKind && argv.includeKind.length > 0) {
-			const innerProcessResource = processResource;
-			processResource = resource => {
-				// Must have specified either 'kind' or 'api.version/kind' to be included.
-				const matchKind = `${resource.apiVersion}.${resource.kind}`;
-				if (argv.includeKind.indexOf(resource.kind) === -1 && argv.includeKind.indexOf(matchKind) === -1) {
-					logger.debug(`Skipping ${resource.apiVersion}.${resource.kind} ${resource.metadata.name}: Not explicitly included`);
-					return Promise.resolve(resource);
-				}
-
-				return innerProcessResource(resource);
+			const settingsFileNames = [argv.deploySettings];
+			if (!argv.disableOverrides && argv.deploySettingsOverrides) {
+				settingsFileNames.push(argv.deploySettingsOverrides);
 			}
-		}
 
-		return result
-			.then(() => resolveModules(argv._, argv.exclude))
-			.then(modules => processTemplates(k8sClient, argv.templateDirectory, modules, argv.outputDirectory, properties, processResource));
-	})
-	.then(resources => logger.info(`Created ${resources.length} resources`))
-	.catch(err => {
-		logger.error(`Cannot apply resources: ${err.message}`, err);
-		process.exit(1);
-	});
+			return loadProperties(settingsFileNames.map(settingsFileName => path.resolve(settingsFileName)), properties);
+		})
+		.then(properties => {
+			// Log the properties before adding the environment variables into them
+			// Environment variables contain typically weird things, and likely secrets that we do not want to expose here
+			logger.debug(`Resolved properties: ${JSON.stringify(properties, null, 2)}`);
+			return properties;
+		})
+		.then(properties => Object.assign({}, properties, {env: process.env}))
+		.then(properties => {
+			let result;
+			let processResource;
+			if (argv.outputOnly) {
+				result = Promise.resolve();
+				processResource = resource => {
+					logger.debug(`Processing: ${JSON.stringify(resource)}`);
+					return Promise.resolve(resource);
+				};
+			} else {
+				const namespace = properties.environment;
+				result = ensureNamespace(k8sClient, namespace, {}).then(ns => {
+					if (argv.authorize) {
+						return authorizeK8s(argv.kubeconfig, ns.metadata.name, argv.serviceAccount, false, 'collaborne-registry');
+					}
+
+					// Ignored by caller
+					return undefined;
+				});
+				processResource = applyResource.bind(undefined, k8sClient);
+			}
+
+			if (argv.includeKind && argv.includeKind.length > 0) {
+				const innerProcessResource = processResource;
+				processResource = resource => {
+					// Must have specified either 'kind' or 'api.version/kind' to be included.
+					const matchKind = `${resource.apiVersion}.${resource.kind}`;
+					if (argv.includeKind.indexOf(resource.kind) === -1 && argv.includeKind.indexOf(matchKind) === -1) {
+						logger.debug(`Skipping ${resource.apiVersion}.${resource.kind} ${resource.metadata.name}: Not explicitly included`);
+						return Promise.resolve(resource);
+					}
+
+					return innerProcessResource(resource);
+				};
+			}
+
+			return result
+				.then(() => resolveModules(argv._, argv.exclude))
+				.then(modules => processTemplates(k8sClient, argv.templateDirectory, modules, argv.outputDirectory, properties, processResource));
+		})
+		.then(resources => logger.info(`Created ${resources.length} resources`))
+		.catch(err => {
+			logger.error(`Cannot apply resources: ${err.message}`, err);
+			process.exit(1);
+		});
 });

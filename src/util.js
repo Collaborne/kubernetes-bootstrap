@@ -8,7 +8,7 @@ const URI = require('urijs');
  * @return {Object}
  */
 function definesToObject(defines) {
-	const properties = defines.map(define => define.split('=')).map(function(kv) {
+	const properties = defines.map(define => define.split('=')).map(kv => {
 		const name = kv[0];
 
 		let value;
@@ -18,10 +18,10 @@ function definesToObject(defines) {
 			value = kv[1];
 		}
 
-		const reversePath = name.split('.').reverse();
-		return reversePath.reduce((obj, name) => ({ [name]: obj }), value);
+		const reverseSegments = name.split('.').reverse();
+		return reverseSegments.reduce((obj, segment) => ({[segment]: obj}), value);
 	}, {});
-	return properties.reduce((agg, value) => agg = deepMerge(agg, value), {});
+	return properties.reduce((agg, value) => deepMerge(agg, value), {});
 }
 
 /**
@@ -34,7 +34,7 @@ function cleanOrigin(uri) {
 	const originalOrigin = URI(uri);
 
 	// Strip out any path, as that confuses shindig and is not part of an origin.
-	return originalOrigin.protocol() + '://' + originalOrigin.host();
+	return `${originalOrigin.protocol()}://${originalOrigin.host()}`;
 }
 
 /**
@@ -49,7 +49,7 @@ function cleanLabelValue(value) {
 }
 
 module.exports = {
-	definesToObject,
 	cleanLabelValue,
 	cleanOrigin,
-}
+	definesToObject,
+};

@@ -13,15 +13,8 @@
         },
         "sourceType": "module"
     },
-    "rules": {
-        "no-const-assign": "error",
-        "no-this-before-super": "warn",
-        "no-undef": "error",
-        "no-unreachable": "error",
-        "no-unused-vars": "warn",
-        "constructor-super": "warn",
-        "valid-typeof": "warn"
-    },
+
+    "extends": "eslint-config-collaborne",
 
     "overrides": [
         {
@@ -29,6 +22,21 @@
 
             "parserOptions": {
                 "sourceType": "script"
+            }
+        },
+        {
+            "files": [
+                "src/bootstrap.js",
+                "src/kubernetes/authorize-k8s.js",
+                "src/kubernetes/k8s-client.js",
+                "src/util.js",
+                "test/util.spec.js"
+            ],
+
+            "rules": {
+                "complexity": "warn",
+                "sort-keys": "warn",
+                "valid-jsdoc": "warn"
             }
         },
         {

@@ -11,24 +11,24 @@ function lookupByName(list, name, valueKey) {
 function loadKubeConfig(kubeConfigPath) {
 	// Split the given config path on the usual path separator, then load the configurations
 	// _sequentially_, each later one overwriting/merging with the previous one.
-	const kubeConfigPaths = kubeConfigPath.split(':')
-	const kubeConfigDescPromises = kubeConfigPaths.map(kubeConfigPath => {
+	const kubeConfigPaths = kubeConfigPath.split(':');
+	const kubeConfigDescPromises = kubeConfigPaths.map(p => {
 		return new Promise((resolve, reject) => {
-			fs.readFile(kubeConfigPath, 'utf-8', (err, data) => {
+			fs.readFile(p, 'utf-8', (err, data) => {
 				if (err) {
 					reject(err);
 					return;
 				}
 
-				resolve({[kubeConfigPath]: yaml.safeLoad(data)});
+				resolve({[p]: yaml.safeLoad(data)});
 			});
 		});
 	});
 
 	return Promise.all(kubeConfigDescPromises).then(kubeConfigDescs => {
 		return {
+			configs: kubeConfigDescs.reduce((agg, kubeConfig) => Object.assign({}, agg, kubeConfig), {}),
 			paths: kubeConfigPaths,
-			configs: kubeConfigDescs.reduce((agg, kubeConfig) => Object.assign({}, agg, kubeConfig), {})
 		};
 	});
 }
@@ -51,8 +51,7 @@ function create(kubeConfigPath, context) {
 			let i = kubeConfig.paths.length - 1;
 			let currentContext = context;
 			while (!currentContext && i >= 0) {
-				const path = kubeConfig.paths[i];
-				const config = kubeConfig.configs[path];
+				const config = kubeConfig.configs[kubeConfig.paths[i]];
 				currentContext = config['current-context'];
 				if (!currentContext) {
 					i--;

@@ -7,7 +7,7 @@ const logger = require('log4js').getLogger();
 function applySecretsToServiceAccount(k8sClient, namespace, serviceAccount, imagePullSecretsName) {
 	// Modify the "default" service account with these new secrets.
 	return k8sClient.ns(namespace).serviceaccount(serviceAccount).patch({
-		imagePullSecrets: [ { name: imagePullSecretsName } ]
+		imagePullSecrets: [{name: imagePullSecretsName}]
 	});
 }
 
@@ -49,13 +49,13 @@ function authorizeK8s(kubeConfigPath, namespace = 'default', serviceAccount = 'd
 		throw new Error('ECR credentials are required');
 	});
 	const k8sPromise = k8s(kubeConfigPath, allowAnyContext ? null : 'minikube');
-	const acquireClients = Promise.all([ecrPromise.then(ecr => ({ ecr })), k8sPromise.then(k8sClient => ({ k8sClient }))]).then(clients => clients.reduce(Object.assign, {}));
+	const acquireClients = Promise.all([ecrPromise.then(ecr => ({ecr})), k8sPromise.then(k8sClient => ({k8sClient}))]).then(clients => clients.reduce(Object.assign, {}));
 
-	return acquireClients.then(function({ecr, k8sClient}) {
-		return new Promise(function(resolve, reject) {
-			return ecr.getAuthorizationToken({}, function(err, data) {
-				if (err) {
-					return reject(new Error(`Cannot get ECR credentials: ${err}`));
+	return acquireClients.then(({ecr, k8sClient}) => {
+		return new Promise((resolve, reject) => {
+			return ecr.getAuthorizationToken({}, (authorizeErr, data) => {
+				if (authorizeErr) {
+					return reject(new Error(`Cannot get ECR credentials: ${authorizeErr}`));
 				}
 
 				const dockerConfig = {
@@ -81,17 +81,24 @@ function authorizeK8s(kubeConfigPath, namespace = 'default', serviceAccount = 'd
 
 				const secret = k8sClient.ns(namespace).secret(collaborneRegistrySecrets.metadata.name);
 				return secret.update(collaborneRegistrySecrets)
-				.catch(err => {
-					if (err.reason === 'NotFound') {
-						return secret.create(collaborneRegistrySecrets).catch(err => { throw new Error(`Cannot create new docker-registry settings ${collaborneRegistrySecrets.metadata.name}: ${err.message}`); });
-					}
+					.catch(updateErr => {
+						if (updateErr.reason === 'NotFound') {
+							return secret.create(collaborneRegistrySecrets).catch(createErr => {
+								throw new Error(`Cannot create new docker-registry settings ${collaborneRegistrySecrets.metadata.name}: ${createErr.message}`);
+							});
+						}
 
-					throw err;
-				})
-				.then(() => applySecretsToServiceAccount(k8sClient, namespace, serviceAccount, collaborneRegistrySecrets.metadata.name))
-				.then(result => { logger.debug(`Service account ${serviceAccount} updated with AWS ECR credentials.`); return result; })
-				.catch(err => { throw new Error(`Cannot update the ${serviceAccount} account: ${err.message}`); })
-				.then(resolve, reject);
+						throw updateErr;
+					})
+					.then(() => applySecretsToServiceAccount(k8sClient, namespace, serviceAccount, collaborneRegistrySecrets.metadata.name))
+					.then(result => {
+						logger.debug(`Service account ${serviceAccount} updated with AWS ECR credentials.`);
+						return result;
+					})
+					.catch(err => {
+						throw new Error(`Cannot update the ${serviceAccount} account: ${err.message}`);
+					})
+					.then(resolve, reject);
 			});
 		});
 	});
