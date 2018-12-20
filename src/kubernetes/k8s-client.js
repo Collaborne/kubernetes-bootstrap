@@ -4,6 +4,8 @@ const {spawn} = require('child_process');
 const yaml = require('js-yaml');
 const k8s = require('auto-kubernetes-client');
 
+const logger = require('log4js').getLogger('kubernetes-bootstrap.k8s-client');
+
 function lookupByName(list, name, valueKey) {
 	return list.filter(e => e.name === name).map(e => e[valueKey]).shift();
 }
@@ -16,6 +18,7 @@ async function loadKubeConfig(kubeConfigPath) {
 		return new Promise(resolve => {
 			fs.readFile(p, 'utf-8', (err, data) => {
 				if (err) {
+					logger.warn(`${p}: Cannot load: ${err.message}`);
 					resolve({error: err.message});
 					return;
 				}
