@@ -2,7 +2,7 @@ const AWS = require('aws-sdk');
 
 const k8s = require('./k8s-client.js');
 
-const logger = require('log4js').getLogger();
+const logger = require('log4js').getLogger('kubernetes-bootstrap.authorize-k8s');
 
 function applySecretsToServiceAccount(k8sClient, namespace, serviceAccount, imagePullSecretsName) {
 	// Modify the "default" service account with these new secrets.
