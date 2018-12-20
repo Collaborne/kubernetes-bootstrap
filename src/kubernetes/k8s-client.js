@@ -37,7 +37,7 @@ async function loadKubeConfig(kubeConfigPath) {
 
 		// Otherwise: Merge the configs, and append the path so we keep the order.
 		Object.assign(agg.configs, kubeConfig);
-		agg.paths.push(Object.keys(kubeConfig));
+		agg.paths.push(...Object.keys(kubeConfig));
 		return agg;
 	}, {
 		configs: {},
