@@ -13,10 +13,10 @@ async function loadKubeConfig(kubeConfigPath) {
 	// _sequentially_, each later one overwriting/merging with the previous one.
 	const kubeConfigPaths = kubeConfigPath.split(':');
 	const kubeConfigDescPromises = kubeConfigPaths.map(p => {
-		return new Promise((resolve, reject) => {
+		return new Promise(resolve => {
 			fs.readFile(p, 'utf-8', (err, data) => {
 				if (err) {
-					reject(err);
+					resolve({error: err.message});
 					return;
 				}
 
@@ -26,11 +26,20 @@ async function loadKubeConfig(kubeConfigPath) {
 	});
 
 	const kubeConfigDescs = await Promise.all(kubeConfigDescPromises);
-	const configs = kubeConfigDescs.reduce((agg, kubeConfig) => Object.assign({}, agg, kubeConfig), {});
-	return {
-		configs: configs,
-		paths: kubeConfigPaths,
-	};
+	return kubeConfigDescs.reduce((agg, kubeConfig) => {
+		if (kubeConfig.error) {
+			// Skip this one
+			return agg;
+		}
+
+		// Otherwise: Merge the configs, and append the path so we keep the order.
+		Object.assign(agg.configs, kubeConfig);
+		agg.paths.push(Object.keys(kubeConfig));
+		return agg;
+	}, {
+		configs: {},
+		paths: [],
+	});
 }
 
 /**
