@@ -60,13 +60,16 @@ async function create(kubeConfigPath, context) {
 	const kubeConfig = await loadKubeConfig(kubeConfigPath);
 
 	// First: Find the "current context" and resolve the configuration
-	let i = kubeConfig.paths.length - 1;
+	// Note that kubectl picks the first `current-context` it finds in the configurations, and doesn't let later
+	// configs overwrite earlier configs.
 	let currentContext = context;
-	while (!currentContext && i >= 0) {
-		const config = kubeConfig.configs[kubeConfig.paths[i]];
-		currentContext = config['current-context'];
-		if (!currentContext) {
-			i--;
+	if (!currentContext) {
+		for (const p of kubeConfig.paths) {
+			const config = kubeConfig.configs[p];
+			currentContext = config['current-context'];
+			if (currentContext) {
+				break;
+			}
 		}
 	}
 
