@@ -322,7 +322,7 @@ function getApplyFlags(annotations) {
 	const group = 'bootstrap.k8s.collaborne.com';
 	const flags = {
 		MANUAL_ONLY: false,
-		STRATEGY: [argv.defaultStrategy],
+		STRATEGY: parseStrategyAnnotation(argv.defaultStrategy ? String(argv.defaultStrategy) : ''),
 		UPDATE_ALLOWED: true,
 	};
 	let ignorePatchFailures = false;
