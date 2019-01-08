@@ -300,6 +300,12 @@ const STRATEGIES = {
 	smart: strategySmart,
 };
 
+/**
+ * Parse and validate a strategy reference
+ *
+ * @param {string} value the annotation value
+ * @return {string[]} the parsed strategy
+ */
 function parseStrategyAnnotation(value) {
 	// Value is a comma-delimited list of update approaches.
 	// Each approach is tried, and if it works the resource is considered "updated".
@@ -315,11 +321,25 @@ function parseStrategyAnnotation(value) {
 	return strategies;
 }
 
+/**
+ * @typedef {Object} Flags
+ * @property {boolean} MANUAL_ONLY
+ * @property {string[]} STRATEGY
+ * @property {boolean} UPDATE_ALLOWED
+ */
+
+/**
+ * Parse the annotations into flags
+ *
+ * @param {Object.<string, string>} annotations annotations on a resource
+ * @return {Flags} the found flags
+ */
 function getApplyFlags(annotations) {
 	// Process all annotations into flags.
 	// If there are annotations for this tool that we do not know: Immediately abort, as these
 	// annotations may require a behavior that we simply do not provide.
 	const group = 'bootstrap.k8s.collaborne.com';
+
 	const flags = {
 		MANUAL_ONLY: false,
 		STRATEGY: parseStrategyAnnotation(argv.defaultStrategy ? String(argv.defaultStrategy) : ''),
