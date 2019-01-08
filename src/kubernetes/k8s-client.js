@@ -122,7 +122,7 @@ async function create(kubeConfigPath, context) {
 			if (userConfig['client-certificate'] && userConfig['client-key']) {
 				accessConfigPromise = Promise.resolve({
 					cert: fs.readFileSync(path.resolve(path.dirname(p), userConfig['client-certificate'])),
-					key: fs.readFileSync(path.resolve(path.dirname(kubeConfigPath), userConfig['client-key'])),
+					key: fs.readFileSync(path.resolve(path.dirname(p), userConfig['client-key'])),
 				});
 			} else if (userConfig.token) {
 				accessConfigPromise = Promise.resolve({
