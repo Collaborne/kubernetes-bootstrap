@@ -1,6 +1,6 @@
 {
   "name": "kubernetes-bootstrap",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Tool for processing a set of (mustache) templates into a kubernetes cluster",
   "main": "src/bootstrap.js",
   "bin": "src/bootstrap.js",
