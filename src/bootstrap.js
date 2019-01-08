@@ -411,9 +411,8 @@ async function applyResource(k8sClient, resource) {
 	// Right now we consider the cases 2 and 3 to be the same in effect, and in both cases we will try
 	// the next strategy.
 	let result;
-	let strategy;
 	let success;
-	for (strategy of flags.STRATEGY) {
+	for (const strategy of flags.STRATEGY) {
 		try {
 			const runStrategy = STRATEGIES[strategy];
 			logger.debug(`${getLogName(resource)}: Trying ${strategy}`);
