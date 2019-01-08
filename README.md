@@ -50,7 +50,16 @@ This field is used by `kubernetes-bootstrap` to create a namespace. All resource
 
 ## Advanced Usage
 
-See the source and `kubernetes-bootstrap --help`.
+`kubernetes-bootstrap` supports multiple "strategies" when applying resources. These can be selected per-resource through the `bootstrap.k8s.collaborne.com/strategy` annotation, and through the `--default-strategy` command-line argument.
+
+| Strategy | Behavior
+| -------- | --------
+| `legacy` | Try to PATCH resources, and if that doesn't work fall back to replacing them using an UPDATE.
+| `smart`  | Use UPDATE for most resources, and PATCH for specific kinds only (`v1.Service`, `v1.ConfigMap`, `v1.Secret`, see `SMART_PATCH_KINDS` in bootstrap.js)
+
+Additionally it is possible to build a custom strategy by setting the strategy to comma-separated list of `create`, `patch`, `update`, `fail`, and `skip`.
+
+See the source and `kubernetes-bootstrap --help` for more information.
 
 ## License
 
