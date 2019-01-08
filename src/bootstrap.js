@@ -121,13 +121,13 @@ function getK8sResource(k8sClient, apiVersion, kind, namespace, name) {
 	return accessor(name);
 }
 
-function strategyFail(k8sClient, k8sResource, resource) {
+async function strategyFail(k8sClient, resource) {
 	// This doesn't do anything, but it prevents the logic building the strategy from implicitly adding 'create'.
 	// The strategy execution code will therefore reject the apply.
 	throw new Error(`Explicitly failing ${getLogName(resource)}`);
 }
 
-async function strategySkip(k8sClient, k8sResource, resource) {
+async function strategySkip(k8sClient, resource) {
 	// A strategy that simply returns "success!"
 	// This can be used to silently ignore updates in some cases.
 	return {status: `Skipping ${getLogName(resource)}`};
@@ -287,7 +287,11 @@ async function strategyLegacy(k8sClient, resource, flags) {
 	}
 }
 
-/** All known strategies */
+/**
+ * All known strategies
+ *
+ * @type {Object.<string, (k8sClient: any, resource: any, flags?: Flags) => Promise<any>>}
+ */
 const STRATEGIES = {
 	fail: strategyFail,
 	skip: strategySkip,
