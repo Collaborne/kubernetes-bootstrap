@@ -41,7 +41,7 @@ You can use `kubernetes-bootstrap` to process these templates and apply them to 
 kubernetes-bootstrap --template-dir templates -x aws
 ```
 
-Any template parameters in the templates will be resolved against the contents of `deploy.yaml` and `deploy.yaml`. `deploy.yaml` must minimally contain the 'environment' field:
+Any template parameters in the templates will be resolved against the contents of `deploy.yaml`. `deploy.yaml` must minimally contain the 'environment' field:
 ```yaml
 environment: my-nice-environment
 ```
