@@ -119,7 +119,7 @@ async function create(kubeConfigPath, context) {
 	for (const p of kubeConfig.paths.reverse()) {
 		const userConfig = lookupByName(kubeConfig.configs[p].users, contextConfig.user, 'user');
 		if (userConfig) {
-			if (userConfig.cert && userConfig.key) {
+			if (userConfig['client-certificate'] && userConfig['client-key']) {
 				accessConfigPromise = Promise.resolve({
 					cert: fs.readFileSync(path.resolve(path.dirname(p), userConfig['client-certificate'])),
 					key: fs.readFileSync(path.resolve(path.dirname(kubeConfigPath), userConfig['client-key'])),
