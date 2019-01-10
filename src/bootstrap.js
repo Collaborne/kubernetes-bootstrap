@@ -268,12 +268,6 @@ async function strategyLegacy(k8sClient, resource, flags) {
 				};
 				op = 'CREATE';
 				result = await k8sResource.create(deepMerge(resource, saveConfigMetadata));
-			} else if (flags.IGNORE_PATCH_FAILURES) {
-				// Certain resources are "one-shot": When jobs exist many fields are immutable, but that's perfectly fine: the job represents
-				// the state at which it executed. If a resource has the annotation bootstrap.k8s.collaborne.com/ignore-patch-failures, we ignore
-				// patch failures gracefully.
-				op = 'SKIP';
-				result = {status: `Ignoring patch failure: ${err.message}`};
 			} else {
 				// Otherwise: Throw the error further.
 				throw err;
