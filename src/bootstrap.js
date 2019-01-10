@@ -122,8 +122,9 @@ function getK8sResource(k8sClient, apiVersion, kind, namespace, name) {
 }
 
 async function strategyFail(k8sClient, resource) {
-	// This doesn't do anything, but it prevents the logic building the strategy from implicitly adding 'create'.
-	// The strategy execution code will therefore reject the apply.
+	// A strategy that fails.
+	// Right now that is not doing much really, as the execution logic will simply try the next strategy
+	// before actually failing.
 	throw new Error(`Explicitly failing ${getLogName(resource)}`);
 }
 
