@@ -30,7 +30,7 @@
     "aws-sdk": "^2.92.0",
     "deepmerge": "^3.0.0",
     "js-yaml": "^3.9.0",
-    "log4js": "^3.0.0",
+    "log4js": "^4.0.1",
     "mkdirp": "^0.5.1",
     "mustache": "^3.0.0",
     "path-is-inside": "^1.0.2",
