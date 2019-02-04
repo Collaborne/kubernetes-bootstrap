@@ -446,14 +446,13 @@ async function applyResource(k8sClient, resource) {
  */
 
 /**
- * @param {Client} k8sClient
  * @param {String} templatesDir
  * @param {Array<String>} modules
  * @param {String} outputDir,
  * @param {Object} properties
  * @param {processCallback} processResource function to call with a single resource
  */
-function processTemplates(k8sClient, templatesDir, modules, outputDir, properties, processResource) {
+function processTemplates(templatesDir, modules, outputDir, properties, processResource) {
 	return new Promise(resolve => {
 		const resourcePromises = [];
 		const walker = walk.walk(templatesDir, {});
@@ -627,16 +626,7 @@ function processTemplates(k8sClient, templatesDir, modules, outputDir, propertie
 
 							// Assign a namespace, iff that resource exists in namespaces.
 							logger.trace(`${inputFileName}: Processing ${resource.apiVersion}/${resource.kind} ${resource.metadata.name}`);
-							const k8sResource = k8sClient.group(resource.apiVersion).resource(resource.kind);
-							if (!k8sResource) {
-								logger.error(`${inputFileName}: Cannot find resource ${resource.apiVersion}/${resource.kind}`);
-								return;
-							}
-							if (k8sResource.namespaced) {
-								resource.metadata.namespace = properties.environment;
-							}
-
-							resourcePromises.push(processResource(resource));
+							resourcePromises.push(processResource(resource, inputFileName));
 						});
 
 						return next();
@@ -723,7 +713,6 @@ function resolveModules(includedModules, excludedModules) {
 }
 
 async function main() {
-	const k8sClient = await k8s(argv.kubeconfig, argv.context, '');
 	const properties = util.definesToObject(argv.define);
 
 	const settingsFileNames = [argv.deploySettings];
@@ -743,10 +732,10 @@ async function main() {
 	if (argv.outputOnly) {
 		prepare = Promise.resolve();
 		processResource = resource => {
-			logger.debug(`Processing: ${JSON.stringify(resource)}`);
 			return Promise.resolve(resource);
 		};
 	} else {
+		const k8sClient = await k8s(argv.kubeconfig, argv.context, '');
 		const namespace = mergedProperties.environment;
 		prepare = ensureNamespace(k8sClient, namespace, {}).then(ns => {
 			if (argv.authorize) {
@@ -756,12 +745,24 @@ async function main() {
 			// Ignored by caller
 			return undefined;
 		});
-		processResource = applyResource.bind(undefined, k8sClient);
+		processResource = (resource, location) => {
+			const k8sResource = k8sClient.group(resource.apiVersion).resource(resource.kind);
+			if (!k8sResource) {
+				const msg = `Cannot find resource ${resource.apiVersion}/${resource.kind}`;
+				logger.error(`${location}: ${msg}`);
+				return Promise.reject(new Error(msg));
+			}
+			if (k8sResource.namespaced) {
+				resource.metadata.namespace = properties.environment;
+			}
+
+			return applyResource(k8sClient, resource);
+		};
 	}
 
 	if (argv.includeKind && argv.includeKind.length > 0) {
 		const innerProcessResource = processResource;
-		processResource = resource => {
+		processResource = (resource, location) => {
 			// Must have specified either 'kind' or 'api.version/kind' to be included.
 			const matchKind = `${resource.apiVersion}.${resource.kind}`;
 			if (argv.includeKind.indexOf(resource.kind) === -1 && argv.includeKind.indexOf(matchKind) === -1) {
@@ -769,13 +770,13 @@ async function main() {
 				return Promise.resolve(resource);
 			}
 
-			return innerProcessResource(resource);
+			return innerProcessResource(resource, location);
 		};
 	}
 
 	await prepare;
 	const modules = await resolveModules(argv._, argv.exclude);
-	const resources = await processTemplates(k8sClient, argv.templateDirectory, modules, argv.outputDirectory, mergedProperties, processResource);
+	const resources = await processTemplates(argv.templateDirectory, modules, argv.outputDirectory, mergedProperties, processResource);
 	logger.info(`Created ${resources.length} resources`);
 }
 
