@@ -33,11 +33,11 @@ const args = process.argv
 const argv = require('yargs')
 	.boolean('authorize').describe('authorize', 'Inject suitable secrets for accessing AWS ECR into the cluster')
 	.string('service-account').default('service-account', 'default')
-	.string('template-directory').default('template-directory', 'templates').normalize('template-directory').describe('template-directory', 'Base directory for templates')
+	.string('template-directory').default('template-directory', 'templates').describe('template-directory', 'Base directory for templates')
 	.string('deploy-settings').default('deploy-settings', 'deploy.yaml').describe('deploy-settings', 'Settings to use for processing the templates')
 	.string('deploy-settings-overrides').default('deploy-settings-overrides', 'deploy.yaml.override').describe('deploy-settings-overrides', 'Additional settings to load')
 	.boolean('disable-overrides').describe('disable-overrides', 'Do not apply deploy.yaml.override')
-	.string('output-directory').default('output-directory', 'target').normalize('output-directory').describe('output-directory', 'Directory in which procesed templates are written')
+	.string('output-directory').default('output-directory', 'target').describe('output-directory', 'Directory in which procesed templates are written')
 	.boolean('output-only').describe('output-only', 'Only produce the output files, but do not apply them to the cluster')
 	.string('kubeconfig').default('kubeconfig', process.env.KUBECONFIG || path.resolve(userDir, '.kube/config')).describe('kubeconfig', 'Kubectl configuration file to use for connecting to the cluster')
 	.string('content').default('context', undefined).describe('context', 'Context in the kubectl configuration to use')
@@ -47,6 +47,10 @@ const argv = require('yargs')
 	.string('default-strategy').default('default-strategy', 'legacy').describe('default-strategy', 'The default strategy to use for applying resources')
 	.coerce(['exclude', 'define'], value => {
 		return typeof value === 'string' ? [value] : value;
+	})
+	.coerce(['template-directory', 'output-directory'], value => {
+		const effectiveValue = Array.isArray(value) ? value[value.length - 1] : value;
+		return path.normalize(effectiveValue);
 	})
 	.help()
 	.strict()
