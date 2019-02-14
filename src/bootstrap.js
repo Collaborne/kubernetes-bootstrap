@@ -732,6 +732,7 @@ async function main() {
 	logger.debug(`Resolved properties: ${JSON.stringify(loadedProperties, null, 2)}`);
 
 	const mergedProperties = Object.assign({}, loadedProperties, {env: process.env});
+	const namespace = mergedProperties.environment;
 
 	let prepare;
 	let processResource;
@@ -742,7 +743,6 @@ async function main() {
 		};
 	} else {
 		const k8sClient = await k8s(argv.kubeconfig, argv.context, '');
-		const namespace = mergedProperties.environment;
 		prepare = ensureNamespace(k8sClient, namespace, {}).then(ns => {
 			if (argv.authorize) {
 				return authorizeK8s(argv.kubeconfig, ns.metadata.name, argv.serviceAccount, false, 'collaborne-registry');
