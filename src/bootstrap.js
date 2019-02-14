@@ -56,6 +56,12 @@ const argv = require('yargs')
 	.strict()
 	.parse(args);
 
+function isNotFoundErr(err) {
+	// For "normal" resources kubernetes seems to use 'NotFound', but for CRDs we get 'Not Found'.
+	// Try to be lenient here and accept all these as indicators for "try creating it, then!"
+	return err.reason === 'NotFound' || err.code === 404 || err.reason === 'Not Found';
+}
+
 /**
  * Ensure that the namespace for the environment exists.
  *
@@ -71,7 +77,7 @@ async function ensureNamespace(k8sClient, environment, extraLabels = {}, extraAn
 	try {
 		return await nsResource.get();
 	} catch (err) {
-		if (err.reason === 'NotFound') {
+		if (isNotFoundErr(err)) {
 			// Create a new one
 			const labels = Object.assign({}, extraLabels, {
 				creator: 'bootstrap'
@@ -213,7 +219,7 @@ async function strategySmart(k8sClient, resource, flags) {
 	try {
 		return await strategy(k8sClient, resource);
 	} catch (err) {
-		if (err.reason !== 'NotFound') {
+		if (!isNotFoundErr(err)) {
 			throw err;
 		}
 
@@ -261,7 +267,7 @@ async function strategyLegacy(k8sClient, resource, flags) {
 				logger.warn(`Received ${err.status}: ${err.message}, trying to replace the object`);
 				op = 'UPDATE';
 				result = await k8sResource.update(resource);
-			} else if (err.reason === 'NotFound') {
+			} else if (isNotFoundErr(err)) {
 				// Non-existing resource, try creating
 				// We need to simulate '--save-config' here, otherwise changes will not be properly applied later.
 				const saveConfigMetadata = {
