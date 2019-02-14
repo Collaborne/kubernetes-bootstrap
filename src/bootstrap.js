@@ -759,7 +759,7 @@ async function main() {
 				return Promise.reject(new Error(msg));
 			}
 			if (k8sResource.namespaced) {
-				resource.metadata.namespace = properties.environment;
+				resource.metadata.namespace = namespace;
 			}
 
 			return applyResource(k8sClient, resource);
