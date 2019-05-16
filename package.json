@@ -27,7 +27,7 @@
   "homepage": "https://github.com/Collaborne/kubernetes-bootstrap#readme",
   "dependencies": {
     "auto-kubernetes-client": "^0.6.1",
-    "aws-sdk": "^2.455.0",
+    "aws-sdk": "^2.457.0",
     "deepmerge": "^3.0.0",
     "js-yaml": "^3.9.0",
     "log4js": "^4.0.1",
