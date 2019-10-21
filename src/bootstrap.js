@@ -45,6 +45,7 @@ const argv = require('yargs')
 	.array('define').default('define', []).alias('D', 'define').describe('define', 'Define/Override a setting on the command-line')
 	.array('include-kind').default('include-kind', []).describe('include-kind', 'Only include resources of the given kind')
 	.string('default-strategy').default('default-strategy', 'legacy').describe('default-strategy', 'The default strategy to use for applying resources')
+	.array('smart-patch-kind').default('smart-patch-kind', []).describe('smart-patch-kind', 'Use "patch" as smart strategy for the given kind')
 	.coerce(['exclude', 'define'], value => {
 		return typeof value === 'string' ? [value] : value;
 	})
@@ -198,6 +199,12 @@ function strategyCreate(k8sClient, resource) {
 
 /** All resources that the smart strategy will default to patching rather than updating */
 const SMART_PATCH_KINDS = ['v1.Service', 'v1.ConfigMap', 'v1.Secret'];
+// Add the kinds specified on the command-line as well
+// XXX: This is mostly for experimentation, we should still further tune the default configuration for this tool
+//      and/or replace it with something else.
+if (argv['smart-patch-kind']) {
+	SMART_PATCH_KINDS.push(...argv['smart-patch-kind']);
+}
 
 /**
  * Smart strategy
