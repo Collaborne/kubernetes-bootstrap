@@ -749,7 +749,7 @@ async function main() {
 			return Promise.resolve(resource);
 		};
 	} else {
-		const k8sClient = await k8s(argv.kubeconfig, argv.context, '');
+		const k8sClient = await k8s(argv.kubeconfig, argv.context);
 		prepare = ensureNamespace(k8sClient, namespace, {}).then(ns => {
 			if (argv.authorize) {
 				return authorizeK8s(argv.kubeconfig, ns.metadata.name, argv.serviceAccount, false, 'collaborne-registry');
