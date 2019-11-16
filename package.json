@@ -36,7 +36,7 @@
     "path-is-inside": "^1.0.2",
     "urijs": "^1.18.10",
     "walk": "^2.3.9",
-    "yargs": "^14.0.0"
+    "yargs": "^15.0.1"
   },
   "devDependencies": {
     "cross-env": "^6.0.0",
