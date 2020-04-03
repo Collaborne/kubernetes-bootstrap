@@ -43,6 +43,6 @@
     "eslint": "^6.0.0",
     "eslint-config-collaborne": "^1.4.0",
     "mocha": "^7.0.1",
-    "nyc": "^15.0.0"
+    "nyc": "^15.0.1"
   }
 }
